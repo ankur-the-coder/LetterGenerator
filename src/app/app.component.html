@@ -20,19 +20,19 @@
           <input type="file" #fileInputSignature accept="image/*,.pdf" (change)="onSignatureChange($event)" style="display: none;">
         </div>
 
-        <div class="upload-item" (click)="onLetterBodyClick()">
+        <!-- <div class="upload-item" (click)="onLetterBodyClick()">
           <div class="upload-icon">📋</div>
           <span>Letter Body(PDF/Image/Docx)</span>
           <input type="file" #fileInputLetter accept="image/*,.pdf,.doc,.docx" (change)="onLetterBodyChange($event)" style="display: none;">
+        </div> -->
+        <div class="upload-item" (click)="openTextBodyModal()">
+          <div class="upload-icon">📝</div>
+          <span>Add Text Body</span>
         </div>
-        <div class="upload-item" (click)="toggleTextMode()">
-  <div class="upload-icon">📝</div>
-  <span>Add Text Body</span>
-</div>
       </div>
 
       <!-- Template Selector -->
-<div class="settings-section">
+<!-- <div class="settings-section">
   <h3>Letter Template</h3>
   <div class="template-selector">
     <select [(ngModel)]="selectedTemplate" class="template-dropdown">
@@ -44,7 +44,7 @@
       Apply Template
     </button>
   </div>
-</div>
+</div> -->
 
       <!-- Background Removal -->
       <!-- <div class="settings-section">
@@ -71,9 +71,9 @@
         <button class="export-btn primary" (click)="exportAsPDF()">
           <span>📄</span> Export PDF
         </button>
-        <button class="export-btn secondary" (click)="exportAsImage()">
+        <!-- <button class="export-btn secondary" (click)="exportAsImage()">
           <span>🖼️</span> Export Image
-        </button>
+        </button> -->
       </div>
 
       <!-- Status -->
@@ -160,28 +160,93 @@
 </canvas>
     </div>
   </div>
+  <!-- Add this right before closing </div> of canvas-area -->
+<div class="page-navigation" *ngIf="getTotalPages() > 1">
+  <button class="page-btn" (click)="previousPage()" [disabled]="currentPage === 1">
+    ← Previous
+  </button>
+  <span class="page-info">Page {{currentPage}} of {{getTotalPages()}}</span>
+  <button class="page-btn" (click)="nextPage()" [disabled]="currentPage === getTotalPages()">
+    Next →
+  </button>
+</div>
 </div>
 
 
-
-<!-- Text Edit Modal -->
-<div class="modal-overlay" *ngIf="showEditModal" (click)="closeEditModal()">
-  <div class="modal-content" (click)="$event.stopPropagation()">
-    <div class="modal-header">
-      <h2>Edit Text</h2>
-      <button class="modal-close" (click)="closeEditModal()">✕</button>
+<!-- REPLACE THE ENTIRE MODAL SECTION WITH THIS -->
+<div class="modal-overlay" *ngIf="showTextBodyModal" (click)="closeTextBodyModal()">
+  <div class="text-body-modal" (click)="$event.stopPropagation()">
+    <div class="upload-item" (click)="openTextBodyModal()">
+      <div class="upload-icon">📝</div>
+      <span>Add Text Body</span>
     </div>
+    
+    <!-- Formatting Toolbar -->
+    <div class="text-formatting-toolbar">
+      <button class="format-btn" [class.active]="modalFontWeight === 'bold'" (click)="toggleModalBold()" title="Bold">
+        <strong>B</strong>
+      </button>
+      <button class="format-btn italic" [class.active]="modalFontStyle === 'italic'" (click)="toggleModalItalic()" title="Italic">
+        <em>I</em>
+      </button>
+      <button class="format-btn" [class.active]="modalTextDecoration === 'underline'" (click)="toggleModalUnderline()" title="Underline">
+        <u>U</u>
+      </button>
+      
+      <div class="toolbar-divider"></div>
+      
+      <select [(ngModel)]="modalFontFamily" class="format-select">
+        <option *ngFor="let font of fontFamilies" [value]="font">{{font}}</option>
+      </select>
+      
+      <select [(ngModel)]="modalFontSize" class="format-select size">
+        <option *ngFor="let size of fontSizes" [value]="size">{{size}}px</option>
+      </select>
+      
+      <div class="toolbar-divider"></div>
+      
+      <div class="format-align-group">
+        <button class="format-btn" title="Align Left">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M0 2h16v2H0zm0 4h10v2H0zm0 4h16v2H0zm0 4h10v2H0z" fill="currentColor"/></svg>
+        </button>
+        <button class="format-btn" title="Align Center">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M0 2h16v2H0zm3 4h10v2H3zm-3 4h16v2H0zm3 4h10v2H3z" fill="currentColor"/></svg>
+        </button>
+        <button class="format-btn" title="Align Right">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M0 2h16v2H0zm6 4h10v2H6zm-6 4h16v2H0zm6 4h10v2H6z" fill="currentColor"/></svg>
+        </button>
+      </div>
+      
+      <div class="toolbar-divider"></div>
+      
+      <button class="format-btn" title="Bulleted List">
+        <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="2" cy="3" r="1.5"/><circle cx="2" cy="8" r="1.5"/><circle cx="2" cy="13" r="1.5"/><path d="M5 2h11v2H5zm0 5h11v2H5zm0 5h11v2H5z" fill="currentColor"/></svg>
+      </button>
+      <button class="format-btn" title="Numbered List">
+        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M1 1h2v4H1zm0 5h2v4H1zm0 5h2v4H1zM5 2h11v2H5zm0 5h11v2H5zm0 5h11v2H5z" fill="currentColor"/></svg>
+      </button>
+      
+      <input type="color" [(ngModel)]="modalTextColor" class="color-picker" title="Text Color">
+    </div>
+    
     <div class="modal-body">
       <textarea 
-        [(ngModel)]="editingText" 
-        class="edit-textarea"
-        placeholder="Enter your text here..."
-        rows="15">
+        #textBodyArea
+        [(ngModel)]="textBodyContent" 
+        class="text-body-textarea"
+        placeholder="Type or paste your letter content here..."
+        [style.fontFamily]="modalFontFamily"
+        [style.fontSize.px]="modalFontSize"
+        [style.fontWeight]="modalFontWeight"
+        [style.fontStyle]="modalFontStyle"
+        [style.textDecoration]="modalTextDecoration"
+        [style.color]="modalTextColor">
       </textarea>
     </div>
+    
     <div class="modal-footer">
-      <button class="modal-btn cancel" (click)="closeEditModal()">Cancel</button>
-      <button class="modal-btn confirm" (click)="confirmTextEdit()">Confirm</button>
+      <button class="modal-btn cancel" (click)="closeTextBodyModal()">Cancel</button>
+      <button class="modal-btn confirm" (click)="applyTextBody()">Apply</button>
     </div>
   </div>
 </div>

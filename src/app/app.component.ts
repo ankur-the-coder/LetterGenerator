@@ -22,8 +22,8 @@ interface CanvasElement {
   isDragging?: boolean;
   isResizing?: boolean;
   isTemplateText?: boolean;
+  pageNumber?: number; // ADD THIS LINE
   
-  // NEW: For rich text support
   richTextSegments?: Array<{
     text: string;
     bold?: boolean;
@@ -40,6 +40,9 @@ interface CanvasElement {
   styleUrl: './app.component.css'
 })
 export class AppComponent {
+  title(title: any) {
+    throw new Error('Method not implemented.');
+  }
   @ViewChild('canvas', { static: false }) canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('canvasWrapper', { static: false }) canvasWrapperRef!: ElementRef<HTMLDivElement>;
   @ViewChild('fileInputTemplate', { static: false }) fileInputTemplate!: ElementRef<HTMLInputElement>;
@@ -65,6 +68,16 @@ private isMouseSelecting = false;
 showEditModal = false;
 editingText = '';
 editingElement: CanvasElement | null = null;
+// Add these after other properties
+showTextBodyModal = false;
+textBodyContent = '';
+modalFontFamily = 'Arial';
+modalFontSize = 16;
+modalFontWeight = 'normal';
+modalFontStyle = 'normal';
+modalTextDecoration = 'none';
+modalTextColor = '#000000';
+currentPage = 1;
   
   // High resolution canvas (300 DPI)
   canvasWidth = 2480; // A4 width at 300 DPI (210mm)
@@ -511,15 +524,18 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
     
     const canvas = this.canvasRef.nativeElement;
     
+    // Clear canvas
     this.ctx.fillStyle = '#ffffff';
     this.ctx.fillRect(0, 0, canvas.width, canvas.height);
     
+    // Draw template background on every page
     if (this.templateImage) {
       this.ctx.drawImage(this.templateImage, 0, 0, canvas.width, canvas.height);
     }
     
     // Draw text box first (if exists)
     if (this.textBox) {
+      // [Keep all existing textBox code - don't change]
       this.ctx.save();
       
       const scaleRatio = this.canvasWidth / this.displayWidth;
@@ -534,7 +550,6 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
       const maxWidth = this.textBox.width - 40 * scaleRatio;
       const lineHeight = fontSize * 1.4;
       
-      // Split text and track cursor position
       const lines: {text: string, charStart: number, charEnd: number}[] = [];
       let charCount = 0;
       
@@ -542,7 +557,7 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
       paragraphs.forEach((paragraph, pIndex) => {
         if (paragraph.trim() === '') {
           lines.push({text: '', charStart: charCount, charEnd: charCount});
-          charCount += 1; // Count the newline
+          charCount += 1;
           return;
         }
         
@@ -550,14 +565,14 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
         let currentLine = '';
         let lineStartChar = charCount;
         
-        words.forEach((word, wIndex) => {
+        words.forEach((word) => {
           const testLine = currentLine ? currentLine + ' ' + word : word;
           const metrics = this.ctx.measureText(testLine);
           
           if (metrics.width > maxWidth && currentLine !== '') {
             const lineEndChar = charCount + currentLine.length;
             lines.push({text: currentLine, charStart: lineStartChar, charEnd: lineEndChar});
-            charCount += currentLine.length + 1; // +1 for space
+            charCount += currentLine.length + 1;
             currentLine = word;
             lineStartChar = charCount;
           } else {
@@ -572,18 +587,16 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
         }
         
         if (pIndex < paragraphs.length - 1) {
-          charCount += 1; // Count newline between paragraphs
+          charCount += 1;
         }
       });
       
-      // Draw selection highlight first (behind text)
       if (this.selectionEnd > this.selectionStart) {
-        this.ctx.fillStyle = 'rgba(79, 70, 229, 0.3)'; // Light blue highlight
+        this.ctx.fillStyle = 'rgba(79, 70, 229, 0.3)';
         
         lines.forEach((line, i) => {
           const lineY = this.textBox!.y + padding + i * lineHeight;
           
-          // Check if selection overlaps with this line
           if (this.selectionStart < line.charEnd && this.selectionEnd > line.charStart) {
             const selectStart = Math.max(this.selectionStart, line.charStart);
             const selectEnd = Math.min(this.selectionEnd, line.charEnd);
@@ -599,13 +612,11 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
         });
       }
       
-      // Draw all text lines
-      this.ctx.fillStyle = this.textColor; // Reset color for text
+      this.ctx.fillStyle = this.textColor;
       lines.forEach((line, i) => {
         this.ctx.fillText(line.text, this.textBox!.x + padding, this.textBox!.y + padding + i * lineHeight);
       });
       
-      // Draw cursor at correct position
       if (this.cursorBlinkVisible && this.selectionStart === this.selectionEnd) {
         let cursorX = this.textBox.x + padding;
         let cursorY = this.textBox.y + padding;
@@ -616,7 +627,6 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
           const lineLength = line.text.length;
           
           if (charsProcessed + lineLength >= this.cursorPosition) {
-            // Cursor is on this line
             const posInLine = this.cursorPosition - charsProcessed;
             const textBeforeCursorInLine = line.text.substring(0, posInLine);
             cursorX = this.textBox.x + padding + this.ctx.measureText(textBeforeCursorInLine).width;
@@ -624,14 +634,13 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
             break;
           }
           
-          charsProcessed += lineLength + 1; // +1 for newline/space
+          charsProcessed += lineLength + 1;
         }
         
         this.ctx.fillStyle = '#4F46E5';
         this.ctx.fillRect(cursorX, cursorY, 2, fontSize);
       }
       
-      // Draw editing border
       this.ctx.strokeStyle = '#4F46E5';
       this.ctx.lineWidth = 2;
       this.ctx.setLineDash([5, 5]);
@@ -641,8 +650,21 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
       this.ctx.restore();
     }
     
-    // Draw canvas elements
+    // Track if we have a text body element on current page for selection
+    let textBodyOnCurrentPage: CanvasElement | null = null;
+    
+    // Draw canvas elements (ONLY for current page)
     this.canvasElements.forEach(element => {
+      // Skip elements not on current page
+      if (element.pageNumber && element.pageNumber !== this.currentPage) {
+        return;
+      }
+      
+      // Track text body element on current page
+      if (element.id.startsWith('textBody_') && element.pageNumber === this.currentPage) {
+        textBodyOnCurrentPage = element;
+      }
+      
       if (element.imageData) {
         const img = new Image();
         img.onload = () => {
@@ -651,7 +673,6 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
           this.ctx.imageSmoothingQuality = 'high';
           this.ctx.drawImage(img, element.x, element.y, element.width, element.height);
           
-          // Don't draw controls during export
           if (this.selectedElement?.id === element.id && !this.isExporting) {
             this.drawElementControls(element);
           }
@@ -671,12 +692,10 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
         const maxWidth = element.width - 40 * scaleRatio;
         const lineHeight = fontSize * 1.4;
         
-        // Check if we have rich text segments
         if (element.richTextSegments && element.richTextSegments.length > 0) {
           let currentY = element.y + padding;
           let currentX = element.x + padding;
           
-          // Render with formatting AND PROPER WORD WRAPPING
           element.richTextSegments.forEach(segment => {
             const weight = segment.bold ? 'bold' : (element.fontWeight || 'normal');
             const style = segment.italic ? 'italic' : (element.fontStyle || 'normal');
@@ -688,28 +707,23 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
               currentY += lineHeight;
               currentX = element.x + padding;
             } else {
-              // FIXED: Proper word wrapping for each segment
               const words = segment.text.split(' ');
               
               words.forEach((word, idx) => {
-                if (!word.trim()) return; // Skip empty words
+                if (!word.trim()) return;
                 
                 const wordText = word;
                 const spaceWidth = this.ctx.measureText(' ').width;
                 const wordWidth = this.ctx.measureText(wordText).width;
                 
-                // Check if word fits on current line
                 if (currentX + wordWidth > element.x + element.width - padding && currentX > element.x + padding) {
-                  // Move to next line
                   currentY += lineHeight;
                   currentX = element.x + padding;
                 }
                 
-                // Draw the word
                 this.ctx.fillText(wordText, currentX, currentY);
                 currentX += wordWidth;
                 
-                // Add space after word (except last word)
                 if (idx < words.length - 1) {
                   currentX += spaceWidth;
                 }
@@ -717,7 +731,6 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
             }
           });
         } else {
-          // Fallback to original rendering
           this.ctx.font = `${element.fontStyle} ${element.fontWeight} ${fontSize}px ${element.fontFamily}`;
           this.ctx.fillStyle = element.color || '#000000';
           
@@ -751,7 +764,10 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
           });
         }
       
-        if (this.selectedElement?.id === element.id && !this.isExporting) {
+        // ALWAYS show controls for text body on current page if not exporting
+        if (!this.isExporting && element.id.startsWith('textBody_')) {
+          this.drawElementControls(element);
+        } else if (this.selectedElement?.id === element.id && !this.isExporting) {
           this.drawElementControls(element);
         }
       
@@ -870,86 +886,95 @@ private drawTextBoxHandles(box: { x: number; y: number; width: number; height: n
     });
   }
 
-onCanvasMouseDown(event: MouseEvent): void {
-  event.preventDefault();
-  const rect = this.canvasRef.nativeElement.getBoundingClientRect();
-  const scaleRatio = this.canvasWidth / (this.displayWidth * this.scale * this.zoom);
-  const x = (event.clientX - rect.left) * scaleRatio;
-  const y = (event.clientY - rect.top) * scaleRatio;
-
-if (this.isTyping && this.textBox && this.isPointInTextBox(x, y, this.textBox)) {
-  this.isMouseSelecting = true;
-  this.cursorPosition = this.getClickedCursorPosition(x, y);
-  this.selectionStart = this.cursorPosition;
-  this.selectionEnd = this.cursorPosition;
-  this.cursorBlinkVisible = true;
-  this.drawCanvas();
-  return;
-}
-
-
-
-  // Handle text box delete button
-  if (this.textBox) {
-    const deleteBoxDist = Math.sqrt(
-      Math.pow(x - (this.textBox.x + this.textBox.width + 12), 2) + 
-      Math.pow(y - (this.textBox.y - 12), 2)
-    );
-    if (deleteBoxDist < 12) {
-      this.removeTextBox();
+  onCanvasMouseDown(event: MouseEvent): void {
+    event.preventDefault();
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    const scaleRatio = this.canvasWidth / (this.displayWidth * this.scale * this.zoom);
+    const x = (event.clientX - rect.left) * scaleRatio;
+    const y = (event.clientY - rect.top) * scaleRatio;
+  
+    if (this.isTyping && this.textBox && this.isPointInTextBox(x, y, this.textBox)) {
+      this.isMouseSelecting = true;
+      this.cursorPosition = this.getClickedCursorPosition(x, y);
+      this.selectionStart = this.cursorPosition;
+      this.selectionEnd = this.cursorPosition;
+      this.cursorBlinkVisible = true;
+      this.drawCanvas();
       return;
     }
+  
+    // Handle text box delete button
+    if (this.textBox) {
+      const deleteBoxDist = Math.sqrt(
+        Math.pow(x - (this.textBox.x + this.textBox.width + 12), 2) + 
+        Math.pow(y - (this.textBox.y - 12), 2)
+      );
+      if (deleteBoxDist < 12) {
+        this.removeTextBox();
+        return;
+      }
+    }
+  
+    // Check if clicking on element control buttons or body
+    for (let i = this.canvasElements.length - 1; i >= 0; i--) {
+      const element = this.canvasElements[i];
+      
+      // Skip elements not on current page
+      if (element.pageNumber && element.pageNumber !== this.currentPage) {
+        continue;
+      }
+      
+      // Check delete button
+      const deleteDist = Math.sqrt(Math.pow(x - (element.x + element.width + 12), 2) + Math.pow(y - (element.y - 12), 2));
+      if (deleteDist < 30) {
+        this.canvasElements = this.canvasElements.filter(el => el.id !== element.id);
+        this.selectedElement = null;
+        this.isTextMode = false;
+        this.drawCanvas();
+        return;
+      }
+  
+      // Check drag button
+      const dragDist = Math.sqrt(Math.pow(x - (element.x - 12), 2) + Math.pow(y - (element.y - 12), 2));
+      if (dragDist < 30) {
+        this.selectedElement = element;
+        this.selectedElement.isDragging = true;
+        this.dragOffset = { x: x - element.x, y: y - element.y };
+        this.drawCanvas();
+        return;
+      }
+  
+      // Check resize button
+      const resizeDist = Math.sqrt(Math.pow(x - (element.x + element.width + 12), 2) + Math.pow(y - (element.y + element.height + 12), 2));
+      if (resizeDist < 30) {
+        this.selectedElement = element;
+        this.selectedElement.isResizing = true;
+        this.dragOffset = { x: element.width, y: element.height };
+        this.drawCanvas();
+        return;
+      }
+      
+      // Check if clicking on element body - OPEN MODAL FOR TEXT BODY ELEMENTS
+      if (this.isPointInElement(x, y, element)) {
+        if (element.id.startsWith('textBody_')) {
+          // Open modal to edit text body
+          this.openTextBodyModal();
+          return;
+        } else {
+          // For other elements, enable dragging
+          this.selectedElement = element;
+          this.selectedElement.isDragging = true;
+          this.dragOffset = { x: x - element.x, y: y - element.y };
+          this.drawCanvas();
+          return;
+        }
+      }
+    }
+  
+    // Deselect
+    this.selectedElement = null;
+    this.drawCanvas();
   }
-
-  // Check if clicking on element control buttons
-  for (let i = this.canvasElements.length - 1; i >= 0; i--) {
-    const element = this.canvasElements[i];
-    
-// Check delete button
-const deleteDist = Math.sqrt(Math.pow(x - (element.x + element.width + 12), 2) + Math.pow(y - (element.y - 12), 2));
-if (deleteDist < 30) {
-  // Remove the element
-  this.canvasElements = this.canvasElements.filter(el => el.id !== element.id);
-  this.selectedElement = null;
-  this.isTextMode = false;
-  this.drawCanvas();
-  return;
-}
-
-    // Check drag button
-    const dragDist = Math.sqrt(Math.pow(x - (element.x - 12), 2) + Math.pow(y - (element.y - 12), 2));
-    if (dragDist < 30) {
-      this.selectedElement = element;
-      this.selectedElement.isDragging = true;
-      this.dragOffset = { x: x - element.x, y: y - element.y };
-      this.drawCanvas();
-      return;
-    }
-
-    // Check resize button
-    const resizeDist = Math.sqrt(Math.pow(x - (element.x + element.width + 12), 2) + Math.pow(y - (element.y + element.height + 12), 2));
-    if (resizeDist < 30) {
-      this.selectedElement = element;
-      this.selectedElement.isResizing = true;
-      this.dragOffset = { x: element.width, y: element.height };
-      this.drawCanvas();
-      return;
-    }
-    
-    // Check if clicking on element body
-    if (this.isPointInElement(x, y, element)) {
-      this.selectedElement = element;
-      this.selectedElement.isDragging = true;
-      this.dragOffset = { x: x - element.x, y: y - element.y };
-      this.drawCanvas();
-      return;
-    }
-  }
-
-  // Deselect
-  this.selectedElement = null;
-  this.drawCanvas();
-}
 
 private isPointInTextBox(x: number, y: number, textBox: any): boolean {
   return x >= textBox.x && x <= textBox.x + textBox.width &&
@@ -1405,32 +1430,197 @@ removeTextBox(): void {
     this.applyScale();
   }
 
-async exportAsPDF(): Promise<void> {
-  this.showStatus('Generating PDF...', 'processing');
-  
-  try {
-    this.isExporting = true;
-    const previousSelected = this.selectedElement;
-    this.selectedElement = null; // Deselect to hide controls
+  async exportAsPDF(): Promise<void> {
+    this.showStatus('Generating PDF...', 'processing');
     
-    // Force a complete redraw
-    this.drawCanvas();
-    
-    const canvas = this.canvasRef.nativeElement;
-    const imgData = canvas.toDataURL('image/jpeg', 0.95);
-    const pdfContent = this.createPDF(this.canvasWidth, this.canvasHeight, imgData);
-    this.downloadPDF(pdfContent, 'letter.pdf');
-    
-    this.isExporting = false;
-    this.selectedElement = previousSelected; // Restore selection
-    this.drawCanvas();
-    this.showStatus('PDF exported!', 'success');
-  } catch (error) {
-    this.isExporting = false;
-    this.showStatus('Export failed', 'error');
-    console.error(error);
+    try {
+      this.isExporting = true;
+      const previousSelected = this.selectedElement;
+      const previousPage = this.currentPage;
+      this.selectedElement = null;
+      
+      const totalPages = this.getTotalPages();
+      const pdfPages: {imageData: string, width: number, height: number}[] = [];
+      
+      // Render each page
+      for (let page = 1; page <= totalPages; page++) {
+        this.currentPage = page;
+        this.drawCanvas();
+        
+        // Wait for images to load
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const canvas = this.canvasRef.nativeElement;
+        
+        // Use lower quality JPEG to reduce file size
+        const imgData = canvas.toDataURL('image/jpeg', 0.7); // Reduced from 0.95 to 0.7
+        pdfPages.push({
+          imageData: imgData,
+          width: canvas.width,
+          height: canvas.height
+        });
+      }
+      
+      // Create multi-page PDF with jsPDF library approach (simplified)
+      const pdfBlob = await this.createSimplifiedMultiPagePDF(pdfPages);
+      this.downloadPDFBlob(pdfBlob, 'letter.pdf');
+      
+      this.isExporting = false;
+      this.selectedElement = previousSelected;
+      this.currentPage = previousPage;
+      this.drawCanvas();
+      this.showStatus(`PDF exported (${totalPages} page${totalPages > 1 ? 's' : ''})!`, 'success');
+    } catch (error) {
+      this.isExporting = false;
+      this.currentPage = 1;
+      this.showStatus('Export failed', 'error');
+      console.error(error);
+    }
   }
-}
+  
+  private async createSimplifiedMultiPagePDF(pages: {imageData: string, width: number, height: number}[]): Promise<Blob> {
+    const pdfWidth = (pages[0].width * 72 / 300); // Convert to points
+    const pdfHeight = (pages[0].height * 72 / 300);
+    
+    let pdfContent = `%PDF-1.4
+  `;
+    const objects: string[] = [];
+    let currentObjectNum = 1;
+    
+    // Object 1: Catalog
+    objects.push(`${currentObjectNum} 0 obj
+  << /Type /Catalog /Pages ${currentObjectNum + 1} 0 R >>
+  endobj
+  `);
+    currentObjectNum++;
+    
+    // Object 2: Pages
+    const pagesObjectNum = currentObjectNum;
+    const pageObjectNums: number[] = [];
+    
+    // Calculate object numbers
+    for (let i = 0; i < pages.length; i++) {
+      pageObjectNums.push(currentObjectNum + 1 + (i * 3));
+    }
+    
+    objects.push(`${pagesObjectNum} 0 obj
+  << /Type /Pages /Kids [${pageObjectNums.map(n => `${n} 0 R`).join(' ')}] /Count ${pages.length} >>
+  endobj
+  `);
+    currentObjectNum++;
+    
+    // Create objects for each page
+    const imageDataArray: Uint8Array[] = [];
+    
+    for (let i = 0; i < pages.length; i++) {
+      const pageObjNum = currentObjectNum++;
+      const contentObjNum = currentObjectNum++;
+      const imageObjNum = currentObjectNum++;
+      
+      // Page object
+      objects.push(`${pageObjNum} 0 obj
+  << /Type /Page /Parent ${pagesObjectNum} 0 R /MediaBox [0 0 ${pdfWidth} ${pdfHeight}] /Contents ${contentObjNum} 0 R /Resources << /XObject << /Im${i} ${imageObjNum} 0 R >> >> >>
+  endobj
+  `);
+      
+      // Content stream
+      const contentStream = `q
+  ${pdfWidth} 0 0 ${pdfHeight} 0 0 cm
+  /Im${i} Do
+  Q`;
+      objects.push(`${contentObjNum} 0 obj
+  << /Length ${contentStream.length} >>
+  stream
+  ${contentStream}
+  endstream
+  endobj
+  `);
+      
+      // Convert image to bytes
+      const base64Data = pages[i].imageData.split(',')[1];
+      const binaryString = atob(base64Data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let j = 0; j < len; j++) {
+        bytes[j] = binaryString.charCodeAt(j);
+      }
+      imageDataArray.push(bytes);
+      
+      // Image object (header only, data added later)
+      objects.push(`${imageObjNum} 0 obj
+  << /Type /XObject /Subtype /Image /Width ${pages[i].width} /Height ${pages[i].height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bytes.length} >>
+  stream
+  `);
+    }
+    
+    // Build PDF
+    const encoder = new TextEncoder();
+    let pdfBytes = encoder.encode(pdfContent);
+    const offsets: number[] = [0];
+    
+    // Add objects
+    for (let i = 0; i < objects.length; i++) {
+      offsets.push(pdfBytes.length);
+      const objBytes = encoder.encode(objects[i]);
+      const newBytes = new Uint8Array(pdfBytes.length + objBytes.length);
+      newBytes.set(pdfBytes);
+      newBytes.set(objBytes, pdfBytes.length);
+      pdfBytes = newBytes;
+      
+      // Add image data if this is an image stream
+      if (objects[i].includes('/Filter /DCTDecode')) {
+        const imageIndex = Math.floor((i - 3) / 3); // Calculate which image
+        if (imageIndex >= 0 && imageIndex < imageDataArray.length) {
+          const imgBytes = imageDataArray[imageIndex];
+          const endStream = encoder.encode(`
+  endstream
+  endobj
+  `);
+          
+          const combined = new Uint8Array(pdfBytes.length + imgBytes.length + endStream.length);
+          combined.set(pdfBytes);
+          combined.set(imgBytes, pdfBytes.length);
+          combined.set(endStream, pdfBytes.length + imgBytes.length);
+          pdfBytes = combined;
+        }
+      }
+    }
+    
+    // Add xref table
+    const xrefStart = pdfBytes.length;
+    let xref = `xref
+  0 ${currentObjectNum}
+  0000000000 65535 f 
+  `;
+    
+    for (let i = 1; i < offsets.length; i++) {
+      xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+    }
+    
+    xref += `trailer
+  << /Size ${currentObjectNum} /Root 1 0 R >>
+  startxref
+  ${xrefStart}
+  %%EOF`;
+    
+    const xrefBytes = encoder.encode(xref);
+    const finalPdf = new Uint8Array(pdfBytes.length + xrefBytes.length);
+    finalPdf.set(pdfBytes);
+    finalPdf.set(xrefBytes, pdfBytes.length);
+    
+    return new Blob([finalPdf], { type: 'application/pdf' });
+  }
+  
+  private downloadPDFBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+
 
   exportAsImage(): void {
     this.showStatus('Generating image...', 'processing');
@@ -1806,4 +1996,372 @@ private async handleWordFile(file: File): Promise<{ text: string, segments: Arra
 }
 
 
+openTextBodyModal(): void {
+  // Collect ALL text body elements from ALL pages
+  const textBodyElements = this.canvasElements
+    .filter(el => el.id.startsWith('textBody_'))
+    .sort((a, b) => (a.pageNumber || 0) - (b.pageNumber || 0));
+  
+  if (textBodyElements.length > 0) {
+    // Combine text from all pages
+    this.textBodyContent = textBodyElements
+      .map(el => el.text)
+      .join('\n\n'); // Add spacing between pages
+    
+    // Use formatting from first element
+    const firstElement = textBodyElements[0];
+    this.modalFontFamily = firstElement.fontFamily || 'Arial';
+    this.modalFontSize = firstElement.fontSize || 16;
+    this.modalFontWeight = firstElement.fontWeight || 'normal';
+    this.modalFontStyle = firstElement.fontStyle || 'normal';
+    this.modalTextDecoration = firstElement.textDecoration || 'none';
+    this.modalTextColor = firstElement.color || '#000000';
+  } else {
+    // Reset to defaults
+    this.textBodyContent = '';
+    this.modalFontFamily = 'Arial';
+    this.modalFontSize = 16;
+    this.modalFontWeight = 'normal';
+    this.modalFontStyle = 'normal';
+    this.modalTextDecoration = 'none';
+    this.modalTextColor = '#000000';
+  }
+  
+  this.showTextBodyModal = true;
 }
+
+closeTextBodyModal(): void {
+  this.showTextBodyModal = false;
+  this.textBodyContent = '';
+}
+
+toggleModalBold(): void {
+  this.modalFontWeight = this.modalFontWeight === 'bold' ? 'normal' : 'bold';
+}
+
+toggleModalItalic(): void {
+  this.modalFontStyle = this.modalFontStyle === 'italic' ? 'normal' : 'italic';
+}
+
+toggleModalUnderline(): void {
+  this.modalTextDecoration = this.modalTextDecoration === 'underline' ? 'none' : 'underline';
+}
+
+applyTextBody(): void {
+  if (!this.textBodyContent.trim()) {
+    this.showStatus('Please enter some text', 'error');
+    return;
+  }
+
+  // Remove any existing text body elements
+  this.canvasElements = this.canvasElements.filter(el => !el.id.startsWith('textBody_'));
+
+  const scaleFactor = this.canvasWidth / this.displayWidth;
+  
+  // Better spacing calculations
+  const leftMargin = 80 * scaleFactor;
+  const rightMargin = 80 * scaleFactor;
+  const topMargin = 180 * scaleFactor; // Space for header
+  const bottomMargin = 250 * scaleFactor; // Space for signature
+  
+  const boxWidth = this.canvasWidth - leftMargin - rightMargin;
+  const boxHeight = this.canvasHeight - topMargin - bottomMargin;
+  
+  // Split text into pages
+  const pages = this.splitTextIntoPages(
+    this.textBodyContent,
+    boxWidth,
+    boxHeight,
+    this.modalFontSize,
+    this.modalFontFamily,
+    this.modalFontWeight,
+    this.modalFontStyle
+  );
+  
+  if (pages.length > 1) {
+    this.showStatus(`Content split into ${pages.length} pages`, 'success');
+  }
+  
+  // Create text elements for each page
+  pages.forEach((pageText, index) => {
+    const element: CanvasElement = {
+      id: `textBody_${Date.now()}_page${index + 1}`,
+      type: 'text',
+      x: leftMargin,
+      y: topMargin,
+      width: boxWidth,
+      height: boxHeight,
+      text: pageText,
+      fontSize: this.modalFontSize,
+      fontFamily: this.modalFontFamily,
+      fontWeight: this.modalFontWeight,
+      fontStyle: this.modalFontStyle,
+      textDecoration: this.modalTextDecoration,
+      color: this.modalTextColor,
+      pageNumber: index + 1
+    };
+    
+    this.canvasElements.push(element);
+  });
+
+  this.currentPage = 1;
+  this.drawCanvas();
+  this.closeTextBodyModal();
+  this.showStatus(`Text body added (${pages.length} page${pages.length > 1 ? 's' : ''})!`, 'success');
+}
+
+
+private splitTextIntoPages(
+  text: string,
+  boxWidth: number,
+  boxHeight: number,
+  fontSize: number,
+  fontFamily: string,
+  fontWeight: string,
+  fontStyle: string
+): string[] {
+  const scaleFactor = this.canvasWidth / this.displayWidth;
+  const actualFontSize = fontSize * scaleFactor;
+  const lineHeight = actualFontSize * 1.4;
+  const padding = 20 * scaleFactor;
+  const maxWidth = boxWidth - (padding * 2);
+  const maxLinesPerPage = Math.floor((boxHeight - padding * 2) / lineHeight);
+  
+  // Set font for measurement
+  this.ctx.font = `${fontStyle} ${fontWeight} ${actualFontSize}px ${fontFamily}`;
+  
+  const pages: string[] = [];
+  let currentPageLines: string[] = [];
+  let currentLineCount = 0;
+  
+  const paragraphs = text.split('\n');
+  
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paragraph = paragraphs[i];
+    
+    // Handle empty paragraphs (line breaks)
+    if (paragraph.trim() === '') {
+      if (currentLineCount < maxLinesPerPage) {
+        currentPageLines.push('');
+        currentLineCount++;
+      } else {
+        // Start new page
+        pages.push(currentPageLines.join('\n'));
+        currentPageLines = [''];
+        currentLineCount = 1;
+      }
+      continue;
+    }
+    
+    // Split paragraph into words and wrap
+    const words = paragraph.split(' ');
+    let currentLine = '';
+    
+    for (let j = 0; j < words.length; j++) {
+      const word = words[j];
+      const testLine = currentLine ? currentLine + ' ' + word : word;
+      const metrics = this.ctx.measureText(testLine);
+      
+      if (metrics.width > maxWidth && currentLine !== '') {
+        // Line is full, push it
+        if (currentLineCount < maxLinesPerPage) {
+          currentPageLines.push(currentLine);
+          currentLineCount++;
+        } else {
+          // Page is full, start new page
+          pages.push(currentPageLines.join('\n'));
+          currentPageLines = [currentLine];
+          currentLineCount = 1;
+        }
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    
+    // Push remaining line
+    if (currentLine) {
+      if (currentLineCount < maxLinesPerPage) {
+        currentPageLines.push(currentLine);
+        currentLineCount++;
+      } else {
+        // Page is full, start new page
+        pages.push(currentPageLines.join('\n'));
+        currentPageLines = [currentLine];
+        currentLineCount = 1;
+      }
+    }
+  }
+  
+  // Push last page if it has content
+  if (currentPageLines.length > 0) {
+    pages.push(currentPageLines.join('\n'));
+  }
+  
+  return pages;
+}
+
+private checkIfTextFits(element: CanvasElement): boolean {
+  const scaleFactor = this.canvasWidth / this.displayWidth;
+  const fontSize = element.fontSize! * scaleFactor;
+  const lineHeight = fontSize * 1.4;
+  const padding = 20 * scaleFactor;
+  const maxWidth = element.width - 40 * scaleFactor;
+  
+  // Temporarily set font to measure
+  this.ctx.font = `${element.fontStyle} ${element.fontWeight} ${fontSize}px ${element.fontFamily}`;
+  
+  let totalLines = 0;
+  const paragraphs = element.text!.split('\n');
+  
+  paragraphs.forEach(paragraph => {
+    if (paragraph.trim() === '') {
+      totalLines++;
+      return;
+    }
+    
+    const words = paragraph.split(' ');
+    let currentLine = '';
+    
+    words.forEach(word => {
+      const testLine = currentLine ? currentLine + ' ' + word : word;
+      const metrics = this.ctx.measureText(testLine);
+      
+      if (metrics.width > maxWidth && currentLine !== '') {
+        totalLines++;
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    });
+    
+    if (currentLine) totalLines++;
+  });
+  
+  const totalHeight = totalLines * lineHeight + padding * 2;
+  return totalHeight <= element.height;
+}
+
+private createMultiPageLayout(element: CanvasElement): void {
+  // This will create a second canvas for overflow content
+  // For now, we'll split the text and show a warning
+  const scaleFactor = this.canvasWidth / this.displayWidth;
+  const fontSize = element.fontSize! * scaleFactor;
+  const lineHeight = fontSize * 1.4;
+  const padding = 20 * scaleFactor;
+  const maxWidth = element.width - 40 * scaleFactor;
+  
+  this.ctx.font = `${element.fontStyle} ${element.fontWeight} ${fontSize}px ${element.fontFamily}`;
+  
+  const maxLines = Math.floor((element.height - padding * 2) / lineHeight);
+  const paragraphs = element.text!.split('\n');
+  
+  let lines: string[] = [];
+  let currentLineCount = 0;
+  let firstPageText = '';
+  let secondPageText = '';
+  
+  for (const paragraph of paragraphs) {
+    if (paragraph.trim() === '') {
+      if (currentLineCount < maxLines) {
+        firstPageText += '\n';
+        currentLineCount++;
+      } else {
+        secondPageText += '\n';
+      }
+      continue;
+    }
+    
+    const words = paragraph.split(' ');
+    let currentLine = '';
+    
+    for (const word of words) {
+      const testLine = currentLine ? currentLine + ' ' + word : word;
+      const metrics = this.ctx.measureText(testLine);
+      
+      if (metrics.width > maxWidth && currentLine !== '') {
+        if (currentLineCount < maxLines) {
+          firstPageText += currentLine + ' ';
+          currentLineCount++;
+        } else {
+          secondPageText += currentLine + ' ';
+        }
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    
+    if (currentLine) {
+      if (currentLineCount < maxLines) {
+        firstPageText += currentLine + '\n';
+        currentLineCount++;
+      } else {
+        secondPageText += currentLine + '\n';
+      }
+    }
+  }
+  
+  // Create first page element
+  const firstPageElement: CanvasElement = {
+    ...element,
+    text: firstPageText.trim()
+  };
+  
+  this.canvasElements.push(firstPageElement);
+  
+  if (secondPageText.trim()) {
+    this.showStatus('Content spans multiple pages. Consider creating a second page manually or reducing content.', 'processing');
+    console.log('Second page content:', secondPageText.trim());
+  }
+}
+
+getTotalPages(): number {
+  const pages = new Set<number>();
+  this.canvasElements.forEach(el => {
+    if (el.pageNumber) {
+      pages.add(el.pageNumber);
+    }
+  });
+  return Math.max(pages.size, 1);
+}
+
+previousPage(): void {
+  if (this.currentPage > 1) {
+    this.currentPage--;
+    this.drawCanvas();
+  }
+}
+
+nextPage(): void {
+  const totalPages = this.getTotalPages();
+  if (this.currentPage < totalPages) {
+    this.currentPage++;
+    this.drawCanvas();
+  }
+}
+
+
+}
+
+
+
+// functions and properties to remove in future 
+
+// - onLetterBodyClick()
+// - onLetterBodyChange()
+// - handleWordDocument()
+// - handleWordFile()
+// - applyTemplate()
+// - getTemplateText()
+// - openEditModal()
+// - closeEditModal()
+// - confirmTextEdit()
+
+// // REMOVE THESE PROPERTIES:
+// - templates
+// - selectedTemplate
+// - showEditModal
+// - editingText
+// - editingElement
+// - @ViewChild('fileInputLetter')

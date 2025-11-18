@@ -10,24 +10,24 @@
       <div class="upload-section">
         <div class="upload-item" (click)="onTemplateClick()">
           <div class="upload-icon">📄</div>
-          <span>Template</span>
+          <span>Template (PDF/Image)</span>
           <input type="file" #fileInputTemplate accept="image/*,.pdf" (change)="onTemplateChange($event)" style="display: none;">
         </div>
 
         <div class="upload-item" (click)="onSignatureClick()">
           <div class="upload-icon">✍️</div>
-          <span>Signature</span>
+          <span>Signature(PDF/Image)</span>
           <input type="file" #fileInputSignature accept="image/*,.pdf" (change)="onSignatureChange($event)" style="display: none;">
         </div>
 
         <div class="upload-item" (click)="onLetterBodyClick()">
           <div class="upload-icon">📋</div>
-          <span>Letter Body</span>
-          <input type="file" #fileInputLetter accept="image/*,.pdf" (change)="onLetterBodyChange($event)" style="display: none;">
+          <span>Letter Body(PDF/Image/Docx)</span>
+          <input type="file" #fileInputLetter accept="image/*,.pdf,.doc,.docx" (change)="onLetterBodyChange($event)" style="display: none;">
         </div>
         <div class="upload-item" (click)="toggleTextMode()">
   <div class="upload-icon">📝</div>
-  <span>Add Text</span>
+  <span>Add Text Body</span>
 </div>
       </div>
 
@@ -47,7 +47,7 @@
 </div>
 
       <!-- Background Removal -->
-      <div class="settings-section">
+      <!-- <div class="settings-section">
         <h3>Background Removal</h3>
         
         <div class="setting-item">
@@ -64,7 +64,7 @@
           <input type="checkbox" id="autoDetect" [(ngModel)]="autoDetect">
           <label for="autoDetect">Auto-detect</label>
         </div>
-      </div>
+      </div> -->
 
       <!-- Export -->
       <div class="export-section">
@@ -158,6 +158,30 @@
   (keydown)="onKeyDown($event)"
   (paste)="onPaste($event)">
 </canvas>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- Text Edit Modal -->
+<div class="modal-overlay" *ngIf="showEditModal" (click)="closeEditModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h2>Edit Text</h2>
+      <button class="modal-close" (click)="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <textarea 
+        [(ngModel)]="editingText" 
+        class="edit-textarea"
+        placeholder="Enter your text here..."
+        rows="15">
+      </textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="modal-btn cancel" (click)="closeEditModal()">Cancel</button>
+      <button class="modal-btn confirm" (click)="confirmTextEdit()">Confirm</button>
     </div>
   </div>
 </div>

@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, ViewChild, ElementRef, AfterViewInit, HostListener } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
 interface CanvasElement {
@@ -20,7 +21,15 @@ interface CanvasElement {
   color?: string;
   isDragging?: boolean;
   isResizing?: boolean;
-  isTemplateText?: boolean; // 👈 ADD THIS LINE
+  isTemplateText?: boolean;
+  
+  // NEW: For rich text support
+  richTextSegments?: Array<{
+    text: string;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+  }>;
 }
 
 @Component({
@@ -49,6 +58,13 @@ export class AppComponent {
   // Add these properties at the top with other properties
  private cursorPosition = 0; // Track cursor position in text
  private cursorBlinkVisible = true;
+ private selectionStart = 0;
+private selectionEnd = 0;
+private isMouseSelecting = false;
+// Add these properties with other component properties
+showEditModal = false;
+editingText = '';
+editingElement: CanvasElement | null = null;
   
   // High resolution canvas (300 DPI)
   canvasWidth = 2480; // A4 width at 300 DPI (210mm)
@@ -93,8 +109,8 @@ selectedTemplate = 'standard'; // Default template
   fontSizes = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
 
   constructor() {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.394/build/pdf.worker.mjs';
+;
   }
 
 ngOnInit(): void {
@@ -144,16 +160,18 @@ ngOnInit(): void {
     canvas.style.height = `${this.displayHeight * this.scale * this.zoom}px`;
   }
 
-  // File upload handlers
   onTemplateClick(): void {
+    this.fileInputTemplate.nativeElement.value = '';  // Clear the input
     this.fileInputTemplate.nativeElement.click();
   }
-
+  
   onSignatureClick(): void {
+    this.fileInputSignature.nativeElement.value = '';  // Clear the input
     this.fileInputSignature.nativeElement.click();
   }
-
+  
   onLetterBodyClick(): void {
+    this.fileInputLetter.nativeElement.value = '';  // Clear the input
     this.fileInputLetter.nativeElement.click();
   }
 
@@ -174,7 +192,52 @@ ngOnInit(): void {
   async onLetterBodyChange(event: any): Promise<void> {
     const file = event.target.files[0];
     if (file) {
-      await this.handleElementFile(file, 'letterBody');
+      // Check if it's a Word document
+      if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
+        await this.handleWordDocument(file);
+      } else {
+        await this.handleElementFile(file, 'letterBody');
+      }
+    }
+  }
+  
+  private async handleWordDocument(file: File): Promise<void> {
+    this.showStatus('Loading Word document...', 'processing');
+    try {
+      const { text, segments } = await this.handleWordFile(file);
+      
+      const scaleFactor = this.canvasWidth / this.displayWidth;
+      
+      // Better height calculation
+      const lineCount = (text.match(/\n/g) || []).length + 1;
+      const estimatedHeight = Math.max(
+        lineCount * 20 * scaleFactor,
+        this.canvasHeight * 0.7
+      );
+      
+      const element: CanvasElement = {
+        id: `text_${Date.now()}`,
+        type: 'text',
+        x: 120 * scaleFactor,
+        y: 150 * scaleFactor,
+        width: this.canvasWidth - 240 * scaleFactor,  // More width
+        height: Math.min(estimatedHeight, this.canvasHeight - 200 * scaleFactor),
+        text: text,
+        fontSize: 13,  // Slightly smaller for better fit
+        fontFamily: 'Arial',
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        textDecoration: 'none',
+        color: '#000000',
+        richTextSegments: segments
+      };
+      
+      this.canvasElements.push(element);
+      this.drawCanvas();
+      this.showStatus('Word document imported!', 'success');
+    } catch (error) {
+      this.showStatus('Failed to import Word document', 'error');
+      console.error(error);
     }
   }
 
@@ -306,14 +369,14 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
     const viewport = page.getViewport({ scale });
     
     const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d')!;
+    const context = canvas.getContext('2d')!;  // ✅ Create new context
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     
     await page.render({
-      canvasContext: this.ctx,
+      canvasContext: context, 
       viewport: viewport,
-      canvas: canvas
+      canvas: canvas  
     }).promise;
     
     return canvas.toDataURL('image/png');
@@ -443,201 +506,259 @@ private async cropTransparentAreas(imageDataURL: string): Promise<string> {
     data.set(tempData);
   }
 
-drawCanvas(): void {
-  if (!this.ctx) return;
-  
-  const canvas = this.canvasRef.nativeElement;
-  
-  this.ctx.fillStyle = '#ffffff';
-  this.ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  if (this.templateImage) {
-    this.ctx.drawImage(this.templateImage, 0, 0, canvas.width, canvas.height);
-  }
-  
-  // Draw text box first (if exists)
-// Draw text box first (if exists)
-// Draw text box first (if exists)
-if (this.textBox) {
-  this.ctx.save();
-  
-  const scaleRatio = this.canvasWidth / this.displayWidth;
-  const fontSize = this.fontSize * scaleRatio;
-  
-  this.ctx.font = `${this.fontStyle} ${this.fontWeight} ${fontSize}px ${this.fontFamily}`;
-  this.ctx.fillStyle = this.textColor;
-  this.ctx.textBaseline = 'top';
-  this.ctx.textAlign = 'left';
-  
-  const padding = 20 * scaleRatio;
-  const maxWidth = this.textBox.width - 40 * scaleRatio;
-  const lineHeight = fontSize * 1.4;
-  
-  // Split text and track cursor position
-  const textBeforeCursor = this.textBox.text.substring(0, this.cursorPosition);
-  const lines: {text: string, charStart: number}[] = [];
-  let charCount = 0;
-  
-  const paragraphs = this.textBox.text.split('\n');
-  paragraphs.forEach((paragraph, pIndex) => {
-    if (paragraph.trim() === '') {
-      lines.push({text: '', charStart: charCount});
-      charCount += 1; // Count the newline
-      return;
+  drawCanvas(): void {
+    if (!this.ctx) return;
+    
+    const canvas = this.canvasRef.nativeElement;
+    
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    if (this.templateImage) {
+      this.ctx.drawImage(this.templateImage, 0, 0, canvas.width, canvas.height);
     }
     
-    const words = paragraph.split(' ');
-    let currentLine = '';
-    let lineStartChar = charCount;
-    
-    words.forEach((word, wIndex) => {
-      const testLine = currentLine ? currentLine + ' ' + word : word;
-      const metrics = this.ctx.measureText(testLine);
+    // Draw text box first (if exists)
+    if (this.textBox) {
+      this.ctx.save();
       
-      if (metrics.width > maxWidth && currentLine !== '') {
-        lines.push({text: currentLine, charStart: lineStartChar});
-        charCount += currentLine.length + 1; // +1 for space
-        currentLine = word;
-        lineStartChar = charCount;
-      } else {
-        currentLine = testLine;
-      }
-    });
-    
-    if (currentLine) {
-      lines.push({text: currentLine, charStart: lineStartChar});
-      charCount += currentLine.length;
-    }
-    
-    if (pIndex < paragraphs.length - 1) {
-      charCount += 1; // Count newline between paragraphs
-    }
-  });
-  
-  // Draw all lines
-  lines.forEach((line, i) => {
-    this.ctx.fillText(line.text, this.textBox!.x + padding, this.textBox!.y + padding + i * lineHeight);
-  });
-  
-  // Draw cursor at correct position
-  if (this.cursorBlinkVisible) {
-    let cursorX = this.textBox.x + padding;
-    let cursorY = this.textBox.y + padding;
-    let charsProcessed = 0;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const lineLength = line.text.length;
+      const scaleRatio = this.canvasWidth / this.displayWidth;
+      const fontSize = this.fontSize * scaleRatio;
       
-      if (charsProcessed + lineLength >= this.cursorPosition) {
-        // Cursor is on this line
-        const posInLine = this.cursorPosition - charsProcessed;
-        const textBeforeCursorInLine = line.text.substring(0, posInLine);
-        cursorX = this.textBox.x + padding + this.ctx.measureText(textBeforeCursorInLine).width;
-        cursorY = this.textBox.y + padding + i * lineHeight;
-        break;
-      }
+      this.ctx.font = `${this.fontStyle} ${this.fontWeight} ${fontSize}px ${this.fontFamily}`;
+      this.ctx.fillStyle = this.textColor;
+      this.ctx.textBaseline = 'top';
+      this.ctx.textAlign = 'left';
       
-      charsProcessed += lineLength + 1; // +1 for newline/space
-    }
-    
-    this.ctx.fillStyle = '#4F46E5';
-    this.ctx.fillRect(cursorX, cursorY, 2, fontSize);
-  }
-  
-  // Draw editing border
-  this.ctx.strokeStyle = '#4F46E5';
-  this.ctx.lineWidth = 2;
-  this.ctx.setLineDash([5, 5]);
-  this.ctx.strokeRect(this.textBox.x, this.textBox.y, this.textBox.width, this.textBox.height);
-  this.ctx.setLineDash([]);
-  
-  this.ctx.restore();
-}
-  
-  // Draw canvas elements
-  this.canvasElements.forEach(element => {
-    if (element.imageData) {
-      const img = new Image();
-      img.onload = () => {
-        this.ctx.save();
-        this.ctx.imageSmoothingEnabled = true;
-        this.ctx.imageSmoothingQuality = 'high';
-        this.ctx.drawImage(img, element.x, element.y, element.width, element.height);
+      const padding = 20 * scaleRatio;
+      const maxWidth = this.textBox.width - 40 * scaleRatio;
+      const lineHeight = fontSize * 1.4;
+      
+      // Split text and track cursor position
+      const lines: {text: string, charStart: number, charEnd: number}[] = [];
+      let charCount = 0;
+      
+      const paragraphs = this.textBox.text.split('\n');
+      paragraphs.forEach((paragraph, pIndex) => {
+        if (paragraph.trim() === '') {
+          lines.push({text: '', charStart: charCount, charEnd: charCount});
+          charCount += 1; // Count the newline
+          return;
+        }
         
-        // Don't draw controls during export
+        const words = paragraph.split(' ');
+        let currentLine = '';
+        let lineStartChar = charCount;
+        
+        words.forEach((word, wIndex) => {
+          const testLine = currentLine ? currentLine + ' ' + word : word;
+          const metrics = this.ctx.measureText(testLine);
+          
+          if (metrics.width > maxWidth && currentLine !== '') {
+            const lineEndChar = charCount + currentLine.length;
+            lines.push({text: currentLine, charStart: lineStartChar, charEnd: lineEndChar});
+            charCount += currentLine.length + 1; // +1 for space
+            currentLine = word;
+            lineStartChar = charCount;
+          } else {
+            currentLine = testLine;
+          }
+        });
+        
+        if (currentLine) {
+          const lineEndChar = charCount + currentLine.length;
+          lines.push({text: currentLine, charStart: lineStartChar, charEnd: lineEndChar});
+          charCount += currentLine.length;
+        }
+        
+        if (pIndex < paragraphs.length - 1) {
+          charCount += 1; // Count newline between paragraphs
+        }
+      });
+      
+      // Draw selection highlight first (behind text)
+      if (this.selectionEnd > this.selectionStart) {
+        this.ctx.fillStyle = 'rgba(79, 70, 229, 0.3)'; // Light blue highlight
+        
+        lines.forEach((line, i) => {
+          const lineY = this.textBox!.y + padding + i * lineHeight;
+          
+          // Check if selection overlaps with this line
+          if (this.selectionStart < line.charEnd && this.selectionEnd > line.charStart) {
+            const selectStart = Math.max(this.selectionStart, line.charStart);
+            const selectEnd = Math.min(this.selectionEnd, line.charEnd);
+            
+            const textBeforeSelection = line.text.substring(0, selectStart - line.charStart);
+            const selectedText = line.text.substring(selectStart - line.charStart, selectEnd - line.charStart);
+            
+            const startX = this.textBox!.x + padding + this.ctx.measureText(textBeforeSelection).width;
+            const selectionWidth = this.ctx.measureText(selectedText).width;
+            
+            this.ctx.fillRect(startX, lineY, selectionWidth, fontSize);
+          }
+        });
+      }
+      
+      // Draw all text lines
+      this.ctx.fillStyle = this.textColor; // Reset color for text
+      lines.forEach((line, i) => {
+        this.ctx.fillText(line.text, this.textBox!.x + padding, this.textBox!.y + padding + i * lineHeight);
+      });
+      
+      // Draw cursor at correct position
+      if (this.cursorBlinkVisible && this.selectionStart === this.selectionEnd) {
+        let cursorX = this.textBox.x + padding;
+        let cursorY = this.textBox.y + padding;
+        let charsProcessed = 0;
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const lineLength = line.text.length;
+          
+          if (charsProcessed + lineLength >= this.cursorPosition) {
+            // Cursor is on this line
+            const posInLine = this.cursorPosition - charsProcessed;
+            const textBeforeCursorInLine = line.text.substring(0, posInLine);
+            cursorX = this.textBox.x + padding + this.ctx.measureText(textBeforeCursorInLine).width;
+            cursorY = this.textBox.y + padding + i * lineHeight;
+            break;
+          }
+          
+          charsProcessed += lineLength + 1; // +1 for newline/space
+        }
+        
+        this.ctx.fillStyle = '#4F46E5';
+        this.ctx.fillRect(cursorX, cursorY, 2, fontSize);
+      }
+      
+      // Draw editing border
+      this.ctx.strokeStyle = '#4F46E5';
+      this.ctx.lineWidth = 2;
+      this.ctx.setLineDash([5, 5]);
+      this.ctx.strokeRect(this.textBox.x, this.textBox.y, this.textBox.width, this.textBox.height);
+      this.ctx.setLineDash([]);
+      
+      this.ctx.restore();
+    }
+    
+    // Draw canvas elements
+    this.canvasElements.forEach(element => {
+      if (element.imageData) {
+        const img = new Image();
+        img.onload = () => {
+          this.ctx.save();
+          this.ctx.imageSmoothingEnabled = true;
+          this.ctx.imageSmoothingQuality = 'high';
+          this.ctx.drawImage(img, element.x, element.y, element.width, element.height);
+          
+          // Don't draw controls during export
+          if (this.selectedElement?.id === element.id && !this.isExporting) {
+            this.drawElementControls(element);
+          }
+          
+          this.ctx.restore();
+        };
+        img.src = element.imageData;
+      } 
+      else if (element.text) {
+        this.ctx.save();
+        const scaleRatio = this.canvasWidth / this.displayWidth;
+        const fontSize = element.fontSize! * scaleRatio;
+        this.ctx.textBaseline = 'top';
+        this.ctx.textAlign = 'left';
+      
+        const padding = 20 * scaleRatio;
+        const maxWidth = element.width - 40 * scaleRatio;
+        const lineHeight = fontSize * 1.4;
+        
+        // Check if we have rich text segments
+        if (element.richTextSegments && element.richTextSegments.length > 0) {
+          let currentY = element.y + padding;
+          let currentX = element.x + padding;
+          
+          // Render with formatting AND PROPER WORD WRAPPING
+          element.richTextSegments.forEach(segment => {
+            const weight = segment.bold ? 'bold' : (element.fontWeight || 'normal');
+            const style = segment.italic ? 'italic' : (element.fontStyle || 'normal');
+            
+            this.ctx.font = `${style} ${weight} ${fontSize}px ${element.fontFamily}`;
+            this.ctx.fillStyle = element.color || '#000000';
+            
+            if (segment.text === '\n') {
+              currentY += lineHeight;
+              currentX = element.x + padding;
+            } else {
+              // FIXED: Proper word wrapping for each segment
+              const words = segment.text.split(' ');
+              
+              words.forEach((word, idx) => {
+                if (!word.trim()) return; // Skip empty words
+                
+                const wordText = word;
+                const spaceWidth = this.ctx.measureText(' ').width;
+                const wordWidth = this.ctx.measureText(wordText).width;
+                
+                // Check if word fits on current line
+                if (currentX + wordWidth > element.x + element.width - padding && currentX > element.x + padding) {
+                  // Move to next line
+                  currentY += lineHeight;
+                  currentX = element.x + padding;
+                }
+                
+                // Draw the word
+                this.ctx.fillText(wordText, currentX, currentY);
+                currentX += wordWidth;
+                
+                // Add space after word (except last word)
+                if (idx < words.length - 1) {
+                  currentX += spaceWidth;
+                }
+              });
+            }
+          });
+        } else {
+          // Fallback to original rendering
+          this.ctx.font = `${element.fontStyle} ${element.fontWeight} ${fontSize}px ${element.fontFamily}`;
+          this.ctx.fillStyle = element.color || '#000000';
+          
+          const paragraphs = element.text.split('\n');
+          const allLines: string[] = [];
+      
+          paragraphs.forEach(paragraph => {
+            if (paragraph.trim() === '') {
+              allLines.push('');
+              return;
+            }
+      
+            const words = paragraph.split(' ');
+            let currentLine = '';
+      
+            words.forEach(word => {
+              const testLine = currentLine ? currentLine + ' ' + word : word;
+              const metrics = this.ctx.measureText(testLine);
+              if (metrics.width > maxWidth && currentLine !== '') {
+                allLines.push(currentLine);
+                currentLine = word;
+              } else {
+                currentLine = testLine;
+              }
+            });
+            if (currentLine) allLines.push(currentLine);
+          });
+      
+          allLines.forEach((line, i) => {
+            this.ctx.fillText(line, element.x + padding, element.y + padding + i * lineHeight);
+          });
+        }
+      
         if (this.selectedElement?.id === element.id && !this.isExporting) {
           this.drawElementControls(element);
         }
-        
+      
         this.ctx.restore();
-      };
-      img.src = element.imageData;
-    } 
-else if (element.text) {
-  this.ctx.save();
-  const scaleRatio = this.canvasWidth / this.displayWidth;
-  const fontSize = element.fontSize! * scaleRatio;
-  this.ctx.font = `${element.fontStyle} ${element.fontWeight} ${fontSize}px ${element.fontFamily}`;
-  this.ctx.fillStyle = element.color || '#000000';
-  this.ctx.textBaseline = 'top';
-  this.ctx.textAlign = 'left';
-
-  // UPDATED: Better word-wrap that preserves line breaks
-  const padding = 20 * scaleRatio;
-  const maxWidth = element.width - 40 * scaleRatio;
-  const paragraphs = element.text.split('\n'); // Split by existing line breaks
-  const allLines: string[] = [];
-
-  // Process each paragraph separately
-  paragraphs.forEach(paragraph => {
-    if (paragraph.trim() === '') {
-      allLines.push(''); // Preserve empty lines
-      return;
-    }
-
-    const words = paragraph.split(' ');
-    let currentLine = '';
-
-    words.forEach(word => {
-      const testLine = currentLine ? currentLine + ' ' + word : word;
-      const metrics = this.ctx.measureText(testLine);
-      if (metrics.width > maxWidth && currentLine !== '') {
-        allLines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
       }
     });
-    if (currentLine) allLines.push(currentLine);
-  });
-
-  // Draw lines with preserved structure
-  const lineHeight = fontSize * 1.4;
-  allLines.forEach((line, i) => {
-    this.ctx.fillText(line, element.x + padding, element.y + padding + i * lineHeight);
-  });
-
-  // Underline if needed
-  if (element.textDecoration === 'underline' && allLines.length > 0) {
-    const lastLineIndex = allLines.length - 1;
-    const yUnderline = element.y + padding + lastLineIndex * lineHeight + fontSize;
-    this.ctx.beginPath();
-    this.ctx.moveTo(element.x + padding, yUnderline);
-    this.ctx.lineTo(element.x + element.width - padding, yUnderline);
-    this.ctx.strokeStyle = element.color || '#000000';
-    this.ctx.lineWidth = 2;
-    this.ctx.stroke();
   }
-
-  if (this.selectedElement?.id === element.id && !this.isExporting) {
-    this.drawElementControls(element);
-  }
-
-  this.ctx.restore();
-}
-  });
-}
 
 // Add this method to your component class
 private moveTextBox(x: number, y: number): void {
@@ -756,13 +877,17 @@ onCanvasMouseDown(event: MouseEvent): void {
   const x = (event.clientX - rect.left) * scaleRatio;
   const y = (event.clientY - rect.top) * scaleRatio;
 
-  // Handle clicking inside text box while typing (set cursor position)
-  if (this.isTyping && this.textBox && this.isPointInTextBox(x, y, this.textBox)) {
-    this.cursorPosition = this.getClickedCursorPosition(x, y);
-    this.cursorBlinkVisible = true;
-    this.drawCanvas();
-    return;
-  }
+if (this.isTyping && this.textBox && this.isPointInTextBox(x, y, this.textBox)) {
+  this.isMouseSelecting = true;
+  this.cursorPosition = this.getClickedCursorPosition(x, y);
+  this.selectionStart = this.cursorPosition;
+  this.selectionEnd = this.cursorPosition;
+  this.cursorBlinkVisible = true;
+  this.drawCanvas();
+  return;
+}
+
+
 
   // Handle text box delete button
   if (this.textBox) {
@@ -780,14 +905,16 @@ onCanvasMouseDown(event: MouseEvent): void {
   for (let i = this.canvasElements.length - 1; i >= 0; i--) {
     const element = this.canvasElements[i];
     
-    // Check delete button
-    const deleteDist = Math.sqrt(Math.pow(x - (element.x + element.width + 12), 2) + Math.pow(y - (element.y - 12), 2));
-    if (deleteDist < 30) {
-      this.canvasElements.splice(i, 1);
-      this.selectedElement = null;
-      this.drawCanvas();
-      return;
-    }
+// Check delete button
+const deleteDist = Math.sqrt(Math.pow(x - (element.x + element.width + 12), 2) + Math.pow(y - (element.y - 12), 2));
+if (deleteDist < 30) {
+  // Remove the element
+  this.canvasElements = this.canvasElements.filter(el => el.id !== element.id);
+  this.selectedElement = null;
+  this.isTextMode = false;
+  this.drawCanvas();
+  return;
+}
 
     // Check drag button
     const dragDist = Math.sqrt(Math.pow(x - (element.x - 12), 2) + Math.pow(y - (element.y - 12), 2));
@@ -832,6 +959,24 @@ private isPointInTextBox(x: number, y: number, textBox: any): boolean {
 onCanvasMouseMove(event: MouseEvent): void {
   event.preventDefault(); // Add this
   if (!this.selectedElement) return;
+
+  if (this.isMouseSelecting && this.textBox) {
+    const rect = this.canvasRef.nativeElement.getBoundingClientRect();
+    const scaleRatio = this.canvasWidth / (this.displayWidth * this.scale * this.zoom);
+    const x = (event.clientX - rect.left) * scaleRatio;
+    const y = (event.clientY - rect.top) * scaleRatio;
+    
+    this.cursorPosition = this.getClickedCursorPosition(x, y);
+    this.selectionEnd = this.cursorPosition;
+    
+    // Ensure selectionStart is always less than selectionEnd
+    if (this.selectionEnd < this.selectionStart) {
+      [this.selectionStart, this.selectionEnd] = [this.selectionEnd, this.selectionStart];
+    }
+    
+    this.drawCanvas();
+    return;
+  }
   
   const rect = this.canvasRef.nativeElement.getBoundingClientRect();
   const scaleRatio = this.canvasWidth / (this.displayWidth * this.scale * this.zoom);
@@ -861,7 +1006,8 @@ onCanvasMouseMove(event: MouseEvent): void {
 }
 
 onCanvasMouseUp(): void {
-   this.isDraggingTextBox = false;
+  this.isMouseSelecting = false;
+  this.isDraggingTextBox = false;
   if (this.selectedElement) {
     this.selectedElement.isDragging = false;
     this.selectedElement.isResizing = false;
@@ -870,7 +1016,26 @@ onCanvasMouseUp(): void {
 
 @HostListener('document:keydown', ['$event'])
 onKeyDown(event: KeyboardEvent): void {
+  // Handle Ctrl shortcuts FIRST (before checking isTyping)
+  if (event.ctrlKey && event.key === 'v') {
+    // Don't prevent default, let paste handler work
+    return;
+  }
+  
+  if (event.ctrlKey && (event.key === 'c' || event.key === 'x')) {
+    // Allow default copy/cut behavior
+    return;
+  }
+  
   if (this.isTyping && this.textBox) {
+    if (event.ctrlKey && event.key === 'a') {
+      event.preventDefault();
+      this.selectionStart = 0;
+      this.selectionEnd = this.textBox.text.length;
+      this.drawCanvas();
+      return;
+    }
+    
     if (event.key === 'Escape') {
       // Save and exit
       if (this.textBox && this.textBox.text.trim()) {
@@ -888,7 +1053,8 @@ onKeyDown(event: KeyboardEvent): void {
           fontStyle: this.fontStyle,
           textDecoration: this.textDecoration,
           color: this.textColor,
-          isTemplateText: this.selectedElement?.isTemplateText || false
+          isTemplateText: this.selectedElement?.isTemplateText || false,
+          richTextSegments: this.selectedElement?.richTextSegments  // PRESERVE RICH TEXT
         };
         this.canvasElements.push(element);
       }
@@ -898,16 +1064,59 @@ onKeyDown(event: KeyboardEvent): void {
       this.isTextMode = false;
       this.selectedElement = null;
       this.cursorPosition = 0;
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
       this.drawCanvas();
-    } else if (event.key === 'ArrowLeft') {
+      return;
+    }
+    
+    if (event.key === 'ArrowLeft') {
       event.preventDefault();
-      this.cursorPosition = Math.max(0, this.cursorPosition - 1);
+      if (event.shiftKey) {
+        // Shift+Arrow: extend selection
+        if (this.selectionStart === this.selectionEnd) {
+          this.selectionStart = this.cursorPosition;
+        }
+        this.cursorPosition = Math.max(0, this.cursorPosition - 1);
+        this.selectionEnd = this.cursorPosition;
+      } else {
+        // Clear selection and move cursor
+        if (this.selectionEnd > this.selectionStart) {
+          this.cursorPosition = this.selectionStart;
+          this.selectionStart = 0;
+          this.selectionEnd = 0;
+        } else {
+          this.cursorPosition = Math.max(0, this.cursorPosition - 1);
+        }
+      }
       this.drawCanvas();
-    } else if (event.key === 'ArrowRight') {
+      return;
+    }
+    
+    if (event.key === 'ArrowRight') {
       event.preventDefault();
-      this.cursorPosition = Math.min(this.textBox.text.length, this.cursorPosition + 1);
+      if (event.shiftKey) {
+        // Shift+Arrow: extend selection
+        if (this.selectionStart === this.selectionEnd) {
+          this.selectionStart = this.cursorPosition;
+        }
+        this.cursorPosition = Math.min(this.textBox.text.length, this.cursorPosition + 1);
+        this.selectionEnd = this.cursorPosition;
+      } else {
+        // Clear selection and move cursor
+        if (this.selectionEnd > this.selectionStart) {
+          this.cursorPosition = this.selectionEnd;
+          this.selectionStart = 0;
+          this.selectionEnd = 0;
+        } else {
+          this.cursorPosition = Math.min(this.textBox.text.length, this.cursorPosition + 1);
+        }
+      }
       this.drawCanvas();
-    } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      return;
+    }
+    
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
       event.preventDefault();
       // Simple up/down - move by approximate line length
       const avgLineLength = 50;
@@ -916,42 +1125,131 @@ onKeyDown(event: KeyboardEvent): void {
       } else {
         this.cursorPosition = Math.min(this.textBox.text.length, this.cursorPosition + avgLineLength);
       }
+      // Clear selection
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
       this.drawCanvas();
-    } else if (event.key === 'Home') {
+      return;
+    }
+    
+    if (event.key === 'Home') {
       event.preventDefault();
       this.cursorPosition = 0;
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
       this.drawCanvas();
-    } else if (event.key === 'End') {
+      return;
+    }
+    
+    if (event.key === 'End') {
       event.preventDefault();
       this.cursorPosition = this.textBox.text.length;
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
       this.drawCanvas();
-    } else if (event.key === 'Enter' && !event.shiftKey) {
+      return;
+    }
+    
+    if (event.key === 'Enter') {
       event.preventDefault();
-      this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + '\n' + this.textBox.text.slice(this.cursorPosition);
-      this.cursorPosition++;
+      if (this.selectionEnd > this.selectionStart) {
+        // Replace selection with newline
+        this.textBox.text = this.textBox.text.slice(0, this.selectionStart) + 
+                            '\n' + 
+                            this.textBox.text.slice(this.selectionEnd);
+        this.cursorPosition = this.selectionStart + 1;
+        this.selectionStart = 0;
+        this.selectionEnd = 0;
+      } else {
+        // Insert newline
+        this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + 
+                            '\n' + 
+                            this.textBox.text.slice(this.cursorPosition);
+        this.cursorPosition++;
+      }
+      
+      // Auto-adjust height
+      const lineCount = (this.textBox.text.match(/\n/g) || []).length + 1;
+      const scaleRatio = this.canvasWidth / this.displayWidth;
+      const estimatedHeight = lineCount * this.fontSize * 1.4 * scaleRatio + 40 * scaleRatio;
+      if (estimatedHeight > this.textBox.height) {
+        this.textBox.height = Math.min(estimatedHeight, this.canvasHeight - this.textBox.y - 50 * scaleRatio);
+      }
+      
       this.drawCanvas();
-    } else if (event.key === 'Backspace') {
+      return;
+    }
+    
+    if (event.key === 'Backspace') {
       event.preventDefault();
-      if (this.cursorPosition > 0) {
-        this.textBox.text = this.textBox.text.slice(0, this.cursorPosition - 1) + this.textBox.text.slice(this.cursorPosition);
+      if (this.selectionEnd > this.selectionStart) {
+        // Delete selection
+        this.textBox.text = this.textBox.text.slice(0, this.selectionStart) + 
+                            this.textBox.text.slice(this.selectionEnd);
+        this.cursorPosition = this.selectionStart;
+        this.selectionStart = 0;
+        this.selectionEnd = 0;
+      } else if (this.cursorPosition > 0) {
+        this.textBox.text = this.textBox.text.slice(0, this.cursorPosition - 1) + 
+                            this.textBox.text.slice(this.cursorPosition);
         this.cursorPosition--;
       }
       this.drawCanvas();
-    } else if (event.key === 'Delete') {
+      return;
+    }
+    
+    if (event.key === 'Delete') {
       event.preventDefault();
-      if (this.cursorPosition < this.textBox.text.length) {
-        this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + this.textBox.text.slice(this.cursorPosition + 1);
+      if (this.selectionEnd > this.selectionStart) {
+        // Delete selection
+        this.textBox.text = this.textBox.text.slice(0, this.selectionStart) + 
+                            this.textBox.text.slice(this.selectionEnd);
+        this.cursorPosition = this.selectionStart;
+        this.selectionStart = 0;
+        this.selectionEnd = 0;
+      } else if (this.cursorPosition < this.textBox.text.length) {
+        this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + 
+                            this.textBox.text.slice(this.cursorPosition + 1);
       }
       this.drawCanvas();
-    } else if (event.key.length === 1 || event.key === ' ') {
-      event.preventDefault();
-      this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + event.key + this.textBox.text.slice(this.cursorPosition);
-      this.cursorPosition++;
-      this.drawCanvas();
+      return;
     }
+    
+    if (event.key.length === 1 || event.key === ' ') {
+      event.preventDefault();
+      // Check if there's a selection
+      if (this.selectionEnd > this.selectionStart) {
+        // Replace selected text
+        this.textBox.text = this.textBox.text.slice(0, this.selectionStart) + 
+                            event.key + 
+                            this.textBox.text.slice(this.selectionEnd);
+        this.cursorPosition = this.selectionStart + 1;
+        this.selectionStart = 0;
+        this.selectionEnd = 0;
+      } else {
+        // Normal insert
+        this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + 
+                            event.key + 
+                            this.textBox.text.slice(this.cursorPosition);
+        this.cursorPosition++;
+      }
+      
+      // Auto-adjust height if text is getting too long
+      const lineCount = (this.textBox.text.match(/\n/g) || []).length + 1;
+      const scaleRatio = this.canvasWidth / this.displayWidth;
+      const estimatedHeight = lineCount * this.fontSize * 1.4 * scaleRatio + 40 * scaleRatio;
+      if (estimatedHeight > this.textBox.height) {
+        this.textBox.height = Math.min(estimatedHeight, this.canvasHeight - this.textBox.y - 50 * scaleRatio);
+      }
+      
+      this.drawCanvas();
+      return;
+    }
+    
     return;
   }
   
+  // Handle delete key for selected elements (when not typing)
   if (event.key === 'Delete' && this.selectedElement) {
     this.canvasElements = this.canvasElements.filter(el => el.id !== this.selectedElement!.id);
     this.selectedElement = null;
@@ -964,17 +1262,27 @@ onPaste(event: ClipboardEvent): void {
   if (this.isTyping && this.textBox) {
     event.preventDefault();
     const pastedText = event.clipboardData?.getData('text') || '';
-    this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + pastedText + this.textBox.text.slice(this.cursorPosition);
-    this.cursorPosition += pastedText.length;
+    
+    if (this.selectionEnd > this.selectionStart) {
+      // Replace selection with pasted text
+      this.textBox.text = this.textBox.text.slice(0, this.selectionStart) + 
+                          pastedText + 
+                          this.textBox.text.slice(this.selectionEnd);
+      this.cursorPosition = this.selectionStart + pastedText.length;
+      this.selectionStart = 0;
+      this.selectionEnd = 0;
+    } else {
+      this.textBox.text = this.textBox.text.slice(0, this.cursorPosition) + 
+                          pastedText + 
+                          this.textBox.text.slice(this.cursorPosition);
+      this.cursorPosition += pastedText.length;
+    }
     this.drawCanvas();
   }
 }
 
 @HostListener('dblclick', ['$event'])
 onCanvasDoubleClick(event: MouseEvent): void {
-  // Prevent double-click while already editing
-  if (this.isTyping) return;
-  
   const rect = this.canvasRef.nativeElement.getBoundingClientRect();
   const scaleRatio = this.canvasWidth / (this.displayWidth * this.scale * this.zoom);
   const x = (event.clientX - rect.left) * scaleRatio;
@@ -984,40 +1292,35 @@ onCanvasDoubleClick(event: MouseEvent): void {
   for (let i = this.canvasElements.length - 1; i >= 0; i--) {
     const element = this.canvasElements[i];
     if (element.type === 'text' && this.isPointInElement(x, y, element)) {
-      // Load element's properties
-      this.fontFamily = element.fontFamily || 'Arial';
-      this.fontSize = element.fontSize || 16;
-      this.fontWeight = element.fontWeight || 'normal';
-      this.fontStyle = element.fontStyle || 'normal';
-      this.textDecoration = element.textDecoration || 'none';
-      this.textColor = element.color || '#000000';
-      this.isTextMode = true;
-      
-      // Create text box preserving ALL properties
-      this.textBox = {
-        x: element.x,
-        y: element.y,
-        width: element.width,
-        height: element.height,
-        text: element.text || ''
-      };
-      
-      // Set cursor to clicked position
-      this.cursorPosition = this.getClickedCursorPosition(x, y);
-      this.cursorBlinkVisible = true;
-      this.isTyping = true;
-      
-      // Store the element we're editing
-      this.selectedElement = element;
-      
-      // Remove element temporarily
-      this.canvasElements = this.canvasElements.filter(el => el.id !== element.id);
-      
-      this.canvasRef.nativeElement.focus();
-      this.drawCanvas();
+      this.openEditModal(element);
       return;
     }
   }
+}
+
+openEditModal(element: CanvasElement): void {
+  this.editingElement = element;
+  this.editingText = element.text || '';
+  this.showEditModal = true;
+}
+
+closeEditModal(): void {
+  this.showEditModal = false;
+  this.editingElement = null;
+  this.editingText = '';
+}
+
+confirmTextEdit(): void {
+  if (this.editingElement && this.editingText.trim()) {
+    // Find the element in the array and update it
+    const index = this.canvasElements.findIndex(el => el.id === this.editingElement!.id);
+    if (index !== -1) {
+      this.canvasElements[index].text = this.editingText;
+      this.drawCanvas();
+      this.showStatus('Text updated!', 'success');
+    }
+  }
+  this.closeEditModal();
 }
 
   private isPointInElement(x: number, y: number, element: CanvasElement): boolean {
@@ -1064,10 +1367,14 @@ toggleTextMode(): void {
   this.drawCanvas();
 }
 
-  removeTextBox(): void {
+removeTextBox(): void {
   this.textBox = null;
   this.isTyping = false;
   this.isTextMode = false;
+  this.selectedElement = null;  // Make sure to clear this
+  this.cursorPosition = 0;
+  this.selectionStart = 0;
+  this.selectionEnd = 0;
   this.drawCanvas();
 }
 
@@ -1389,4 +1696,114 @@ private getClickedCursorPosition(clickX: number, clickY: number): number {
   
   return closestChar;
 }
+
+private async handleWordFile(file: File): Promise<{ text: string, segments: Array<{text: string, bold?: boolean, italic?: boolean}> }> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = result.value;
+    
+    const segments: Array<{text: string, bold?: boolean, italic?: boolean}> = [];
+    let plainText = '';
+    
+    const processNode = (node: Node, currentBold = false, currentItalic = false): void => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent || '';
+        if (text.trim()) {
+          segments.push({
+            text: text,
+            bold: currentBold,
+            italic: currentItalic
+          });
+          plainText += text;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as HTMLElement;
+        const tagName = element.tagName.toLowerCase();
+        
+        const isBold = currentBold || tagName === 'strong' || tagName === 'b';
+        const isItalic = currentItalic || tagName === 'em' || tagName === 'i';
+        
+        if (tagName === 'p' || tagName === 'div') {
+          element.childNodes.forEach(child => processNode(child, isBold, isItalic));
+          segments.push({ text: '\n' });
+          plainText += '\n';
+        } else if (tagName === 'h1' || tagName === 'h2' || tagName === 'h3') {
+          element.childNodes.forEach(child => processNode(child, true, isItalic)); // Headings are bold
+          segments.push({ text: '\n' });
+          plainText += '\n';
+        } else if (tagName === 'br') {
+          segments.push({ text: '\n' });
+          plainText += '\n';
+        } else if (tagName === 'table') {
+          // PROCESS TABLE: Convert to readable format
+          const rows = element.querySelectorAll('tr');
+          rows.forEach((row, rowIdx) => {
+            const cells = row.querySelectorAll('td, th');
+            const isHeader = row.querySelector('th') !== null;
+            
+            cells.forEach((cell, cellIdx) => {
+              const cellText = cell.textContent?.trim() || '';
+              if (cellText) {
+                segments.push({
+                  text: cellText,
+                  bold: isHeader || currentBold
+                });
+                plainText += cellText;
+                
+                // Add spacing between cells
+                if (cellIdx < cells.length - 1) {
+                  segments.push({ text: ': ' });
+                  plainText += ': ';
+                }
+              }
+            });
+            
+            // New line after each row
+            segments.push({ text: '\n' });
+            plainText += '\n';
+          });
+          
+          // Extra line after table
+          segments.push({ text: '\n' });
+          plainText += '\n';
+        } else if (tagName === 'tr') {
+          // Skip - handled in table processing
+          return;
+        } else if (tagName === 'td' || tagName === 'th') {
+          // Skip - handled in table processing
+          return;
+        } else {
+          element.childNodes.forEach(child => processNode(child, isBold, isItalic));
+        }
+      }
+    };
+    
+    tempDiv.childNodes.forEach(node => processNode(node));
+    
+    // Clean up plain text
+    plainText = plainText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !/^[\+\-\|\=\s]+$/.test(l))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    
+    // Clean up segments - remove empty ones
+    const cleanedSegments = segments.filter(seg => 
+      seg.text === '\n' || seg.text.trim().length > 0
+    );
+    
+    return { text: plainText, segments: cleanedSegments };
+    
+  } catch (error) {
+    console.error('Error reading Word file:', error);
+    throw error;
+  }
+}
+
+
 }

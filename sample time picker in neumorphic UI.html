@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Neumorphic Time Picker - Clock, iOS Wheel & Sliders</title>
+  <style>
+    :root {
+      /* Warm Beige Neumorphic Palette */
+      --bg-color: #f0ece6;
+      --shadow-dark: #d3ccc3;
+      --shadow-light: #ffffff;
+      
+      /* Subtle Carved Text System */
+      --text-main: #585047;
+      --text-carved-shadow: -1px -1px 1px #c5bcb0, 1px 1px 1px #ffffff;
+      
+      /* Vibrant Coral Accent */
+      --coral-accent: #ff6849;
+      --coral-glow: rgba(255, 104, 73, 0.35);
+      
+      /* Surface Shadows */
+      --shadow-extruded-card: 20px 20px 40px var(--shadow-dark), -20px -20px 40px var(--shadow-light);
+      --shadow-extruded-btn: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
+      --shadow-pressed-slot: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+      --shadow-pressed-dial: inset 6px 6px 12px var(--shadow-dark), inset -6px -6px 12px var(--shadow-light);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+
+    /* 0.85x Scale Container Wrapper */
+    .picker-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transform: scale(0.85);
+      transform-origin: center center;
+      width: 100%;
+    }
+
+    /* Main Floating Card */
+    .picker-container {
+      width: 440px;
+      background: var(--bg-color);
+      border-radius: 36px;
+      padding: 32px;
+      box-shadow: var(--shadow-extruded-card);
+    }
+
+    /* Carved Text Utility */
+    .carved-text {
+      color: var(--text-main);
+      text-shadow: var(--text-carved-shadow);
+      font-weight: 400;
+    }
+
+    /* Recessed Header Display Bar */
+    .time-display-bar {
+      background: var(--bg-color);
+      border-radius: 20px;
+      padding: 14px 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-pressed-slot);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .time-digit-slot {
+      font-size: 2rem;
+      font-weight: 400;
+      letter-spacing: 1px;
+      cursor: pointer;
+      padding: 2px 10px;
+      border-radius: 10px;
+      transition: color 0.15s ease;
+    }
+
+    .time-digit-slot.active-target {
+      color: var(--coral-accent);
+      text-shadow: none;
+    }
+
+    .time-colon {
+      font-size: 2rem;
+      font-weight: 400;
+      color: var(--coral-accent);
+    }
+
+    /* AM / PM Segment Switcher */
+    .ampm-switch {
+      display: flex;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-pressed-slot);
+      border-radius: 12px;
+      padding: 4px;
+      margin-left: 10px;
+    }
+
+    .ampm-btn {
+      border: none;
+      background: transparent;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .ampm-btn.active {
+      background: var(--coral-accent);
+      color: #ffffff;
+      box-shadow: 2px 2px 5px rgba(170, 45, 15, 0.4), -1px -1px 3px rgba(255, 255, 255, 0.8);
+    }
+
+    /* --- MODE SELECTION TABS (ALL 3 VISIBLE) --- */
+    .mode-switch-bar {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 22px;
+      background: var(--bg-color);
+      padding: 4px;
+      border-radius: 16px;
+      box-shadow: var(--shadow-pressed-slot);
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 10px 4px;
+      border: none;
+      border-radius: 12px;
+      background: transparent;
+      font-size: 0.82rem;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .mode-btn.active {
+      background: var(--bg-color);
+      box-shadow: var(--shadow-extruded-btn);
+      color: var(--coral-accent);
+      font-weight: 500;
+    }
+
+    /* Panels Container */
+    .view-panel {
+      display: none;
+    }
+
+    .view-panel.active {
+      display: block;
+    }
+
+    /* --- VIEW 1: CLOCK DIAL VIEW --- */
+    .clock-sub-toggle {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .sub-tab {
+      border: none;
+      background: transparent;
+      font-size: 0.9rem;
+      cursor: pointer;
+      padding: 6px 18px;
+      border-radius: 12px;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+
+    .sub-tab.active {
+      box-shadow: var(--shadow-pressed-slot);
+      color: var(--coral-accent);
+    }
+
+    .clock-face {
+      width: 250px;
+      height: 250px;
+      margin: 0 auto;
+      border-radius: 50%;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-pressed-dial);
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .clock-center-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--coral-accent);
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      box-shadow: 2px 2px 4px rgba(170, 45, 15, 0.4);
+    }
+
+    /* PERFECTLY CALIBRATED HAND & RING (No stem extension inside ring) */
+    .clock-hand {
+      position: absolute;
+      bottom: 50%; /* Center of clock */
+      left: calc(50% - 2px);
+      width: 4px;
+      height: 70px; /* Exact length stopping right at ring outer border */
+      background: var(--coral-accent);
+      border-radius: 4px;
+      transform-origin: bottom center;
+      transition: transform 0.08s ease-out;
+      z-index: 5;
+      box-shadow: 0px 2px 6px var(--coral-glow);
+      pointer-events: none;
+    }
+
+    .clock-ring-tip {
+      position: absolute;
+      top: -36px; /* Positions 36px ring exactly above 70px stem */
+      left: calc(50% - 18px);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 3px solid var(--coral-accent);
+      background: rgba(240, 236, 230, 0.35);
+      box-shadow: 3px 3px 7px rgba(170, 45, 15, 0.35), 
+                  -2px -2px 5px rgba(255, 255, 255, 0.8), 
+                  0px 4px 10px var(--coral-glow);
+      pointer-events: none;
+    }
+
+    .clock-number {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .clock-number.selected {
+      color: var(--coral-accent);
+      font-weight: 600;
+      text-shadow: none;
+    }
+
+    /* --- VIEW 2: APPLE ALARM STYLE INFINITE WHEEL PICKER --- */
+    .wheel-picker-container {
+      position: relative;
+      height: 220px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+      background: var(--bg-color);
+      border-radius: 24px;
+      box-shadow: var(--shadow-pressed-dial);
+      padding: 0 12px;
+      user-select: none;
+    }
+
+    /* Central Selection Band Trench */
+    .wheel-selection-overlay {
+      position: absolute;
+      top: calc(50% - 22px);
+      left: 16px;
+      right: 16px;
+      height: 44px;
+      border-radius: 14px;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-pressed-slot);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .wheel-column {
+      flex: 1;
+      height: 100%;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      z-index: 3;
+      padding: 88px 0; /* Ensures 1st & last items can center vertically */
+    }
+
+    .wheel-column::-webkit-scrollbar {
+      display: none;
+    }
+
+    .wheel-item {
+      height: 44px;
+      line-height: 44px;
+      text-align: center;
+      font-size: 1.2rem;
+      scroll-snap-align: center;
+      cursor: pointer;
+      opacity: 0.35;
+      transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+    }
+
+    .wheel-item.active {
+      opacity: 1;
+      color: var(--coral-accent);
+      font-weight: 600;
+      transform: scale(1.15);
+      text-shadow: none;
+    }
+
+    /* --- VIEW 3: TOUCH SLIDERS --- */
+    .slider-group {
+      margin-bottom: 24px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding: 0 4px;
+    }
+
+    .slider-val {
+      font-size: 1.1rem;
+      color: var(--coral-accent);
+      font-weight: 500;
+    }
+
+    .neumorphic-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 20px;
+      border-radius: 10px;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-pressed-slot);
+      outline: none;
+      margin: 8px 0;
+    }
+
+    .neumorphic-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--coral-accent);
+      box-shadow: 3px 3px 7px rgba(170, 45, 15, 0.45), 
+                  -2px -2px 5px rgba(255, 255, 255, 0.8), 
+                  0px 4px 12px var(--coral-glow);
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+
+    .neumorphic-slider::-webkit-slider-thumb:active {
+      transform: scale(1.15);
+    }
+
+    /* Footer Action Buttons */
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 16px;
+      margin-top: 26px;
+    }
+
+    .btn-reset {
+      border: none;
+      padding: 12px 26px;
+      border-radius: 16px;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-extruded-btn);
+      color: var(--text-main);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .btn-reset:active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      transform: scale(0.96);
+    }
+
+    .btn-submit {
+      border: none;
+      padding: 12px 30px;
+      border-radius: 16px;
+      background: var(--coral-accent);
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      box-shadow: 3px 3px 7px rgba(170, 45, 15, 0.45), 
+                  -2px -2px 5px rgba(255, 255, 255, 0.8), 
+                  0px 4px 12px var(--coral-glow);
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.96);
+      box-shadow: inset 2px 2px 4px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+
+<div class="picker-wrapper">
+  <div class="picker-container">
+    
+    <!-- Recessed Main Time Display Header -->
+    <div class="time-display-bar">
+      <div class="time-digit-slot carved-text active-target" id="disp-hours">06</div>
+      <div class="time-colon">:</div>
+      <div class="time-digit-slot carved-text" id="disp-minutes">40</div>
+      
+      <div class="ampm-switch">
+        <button class="ampm-btn" id="ampm-am">AM</button>
+        <button class="ampm-btn active" id="ampm-pm">PM</button>
+      </div>
+    </div>
+
+    <!-- Mode Selector Tabs (All 3 Options Visible) -->
+    <div class="mode-switch-bar">
+      <button class="mode-btn carved-text" id="mode-clock-btn">Clock Dial</button>
+      <button class="mode-btn carved-text" id="mode-wheel-btn">iOS Wheel</button>
+      <button class="mode-btn carved-text" id="mode-slider-btn">Sliders</button>
+    </div>
+
+    <!-- PANEL 1: Interactive Clock Dial View -->
+    <div class="view-panel" id="panel-clock">
+      <div class="clock-sub-toggle">
+        <button class="sub-tab carved-text active" id="tab-hours">Hours</button>
+        <button class="sub-tab carved-text" id="tab-minutes">Minutes</button>
+      </div>
+
+      <div class="clock-face" id="clock-face">
+        <div class="clock-center-dot"></div>
+        <div class="clock-hand" id="clock-hand">
+          <div class="clock-ring-tip"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANEL 2: Apple Alarm Style Infinite Scroll Wheel View -->
+    <div class="view-panel" id="panel-wheel">
+      <div class="wheel-picker-container">
+        <div class="wheel-selection-overlay"></div>
+        
+        <!-- Hours Wheel Column -->
+        <div class="wheel-column" id="wheel-col-hours"></div>
+        
+        <!-- Minutes Wheel Column -->
+        <div class="wheel-column" id="wheel-col-minutes"></div>
+        
+        <!-- AM/PM Wheel Column -->
+        <div class="wheel-column" id="wheel-col-ampm"></div>
+      </div>
+    </div>
+
+    <!-- PANEL 3: Touch Sliders View -->
+    <div class="view-panel" id="panel-sliders">
+      <!-- Hours Slider -->
+      <div class="slider-group">
+        <div class="slider-header">
+          <span class="carved-text">Hours</span>
+          <span class="slider-val carved-text" id="slider-hh-label">06</span>
+        </div>
+        <input type="range" min="1" max="12" value="6" step="1" id="slider-hh" class="neumorphic-slider">
+      </div>
+
+      <!-- Minutes Slider -->
+      <div class="slider-group">
+        <div class="slider-header">
+          <span class="carved-text">Minutes</span>
+          <span class="slider-val carved-text" id="slider-mm-label">40</span>
+        </div>
+        <input type="range" min="0" max="59" value="40" step="1" id="slider-mm" class="neumorphic-slider">
+      </div>
+    </div>
+
+    <!-- Actions Footer -->
+    <div class="actions">
+      <button class="btn-reset carved-text" id="reset-btn">Reset</button>
+      <button class="btn-submit" id="submit-btn">Submit</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // Global Central State
+  let selectedHour = 6;     // 1 - 12
+  let selectedMinute = 40;  // 0 - 59
+  let selectedAmPm = 'PM';
+  let activeClockTab = 'hours'; // 'hours' or 'minutes'
+  let isClockDragging = false;
+  let isWheelProgrammaticScroll = false;
+
+  // DOM Handles
+  const dispHours = document.getElementById('disp-hours');
+  const dispMinutes = document.getElementById('disp-minutes');
+  const ampmAm = document.getElementById('ampm-am');
+  const ampmPm = document.getElementById('ampm-pm');
+
+  const modeClockBtn = document.getElementById('mode-clock-btn');
+  const modeWheelBtn = document.getElementById('mode-wheel-btn');
+  const modeSliderBtn = document.getElementById('mode-slider-btn');
+
+  const panelClock = document.getElementById('panel-clock');
+  const panelWheel = document.getElementById('panel-wheel');
+  const panelSliders = document.getElementById('panel-sliders');
+
+  const tabHours = document.getElementById('tab-hours');
+  const tabMinutes = document.getElementById('tab-minutes');
+  const clockFace = document.getElementById('clock-face');
+  const clockHand = document.getElementById('clock-hand');
+
+  const wheelColHours = document.getElementById('wheel-col-hours');
+  const wheelColMinutes = document.getElementById('wheel-col-minutes');
+  const wheelColAmpm = document.getElementById('wheel-col-ampm');
+
+  const sliderHh = document.getElementById('slider-hh');
+  const sliderMm = document.getElementById('slider-mm');
+  const sliderHhLabel = document.getElementById('slider-hh-label');
+  const sliderMmLabel = document.getElementById('slider-mm-label');
+
+  const resetBtn = document.getElementById('reset-btn');
+  const submitBtn = document.getElementById('submit-btn');
+
+  function pad(num) {
+    return num < 10 ? '0' + num : num.toString();
+  }
+
+  // --- CENTRAL SYNCHRONIZER ---
+  function updateAllViews(source) {
+    // Header Display
+    dispHours.textContent = pad(selectedHour);
+    dispMinutes.textContent = pad(selectedMinute);
+
+    if (selectedAmPm === 'AM') {
+      ampmAm.classList.add('active');
+      ampmPm.classList.remove('active');
+    } else {
+      ampmPm.classList.add('active');
+      ampmAm.classList.remove('active');
+    }
+
+    // Sliders View Sync
+    sliderHh.value = selectedHour;
+    sliderMm.value = selectedMinute;
+    sliderHhLabel.textContent = pad(selectedHour);
+    sliderMmLabel.textContent = pad(selectedMinute);
+
+    // Clock View Sync
+    updateClockUI();
+
+    // Wheel View Sync
+    if (source !== 'wheel') {
+      syncWheelPositions();
+    }
+  }
+
+  // --- VIEW MODE SWITCHER ---
+  function switchView(mode) {
+    modeClockBtn.classList.remove('active');
+    modeWheelBtn.classList.remove('active');
+    modeSliderBtn.classList.remove('active');
+
+    panelClock.classList.remove('active');
+    panelWheel.classList.remove('active');
+    panelSliders.classList.remove('active');
+
+    if (mode === 'clock') {
+      modeClockBtn.classList.add('active');
+      panelClock.classList.add('active');
+    } else if (mode === 'wheel') {
+      modeWheelBtn.classList.add('active');
+      panelWheel.classList.add('active');
+      setTimeout(syncWheelPositions, 50); // Ensure layout render
+    } else if (mode === 'slider') {
+      modeSliderBtn.classList.add('active');
+      panelSliders.classList.add('active');
+    }
+  }
+
+  // Auto-detect view for screen size on load
+  function initResponsiveView() {
+    if (window.innerWidth <= 600) {
+      switchView('wheel'); // Default for Mobile
+    } else {
+      switchView('clock'); // Default for Desktop
+    }
+  }
+
+  // --- CLOCK FACE LOGIC (PERFECT RING CENTERING & NO STEM OVERLAP) ---
+  function renderClockNumbers() {
+    const oldNumbers = clockFace.querySelectorAll('.clock-number');
+    oldNumbers.forEach(el => el.remove());
+
+    const radius = 88; // Perfectly aligned radius matching 70px hand stem + 18px ring center
+    const center = 125;
+
+    if (activeClockTab === 'hours') {
+      for (let i = 1; i <= 12; i++) {
+        const angle = (i * 30 - 90) * (Math.PI / 180);
+        const x = center + radius * Math.cos(angle);
+        const y = center + radius * Math.sin(angle);
+
+        const numEl = document.createElement('div');
+        numEl.className = 'clock-number carved-text';
+        numEl.textContent = i;
+        numEl.style.left = `${x}px`;
+        numEl.style.top = `${y}px`;
+
+        if (i === selectedHour) {
+          numEl.classList.add('selected');
+        }
+
+        clockFace.appendChild(numEl);
+      }
+    } else {
+      for (let i = 0; i < 60; i += 5) {
+        const val = i;
+        const angle = (val * 6 - 90) * (Math.PI / 180);
+        const x = center + radius * Math.cos(angle);
+        const y = center + radius * Math.sin(angle);
+
+        const numEl = document.createElement('div');
+        numEl.className = 'clock-number carved-text';
+        numEl.textContent = pad(val);
+        numEl.style.left = `${x}px`;
+        numEl.style.top = `${y}px`;
+
+        if (Math.round(selectedMinute / 5) * 5 % 60 === val) {
+          numEl.classList.add('selected');
+        }
+
+        clockFace.appendChild(numEl);
+      }
+    }
+  }
+
+  function updateClockUI() {
+    renderClockNumbers();
+
+    let rotationAngle = 0;
+    if (activeClockTab === 'hours') {
+      rotationAngle = selectedHour * 30;
+    } else {
+      rotationAngle = selectedMinute * 6;
+    }
+    clockHand.style.transform = `rotate(${rotationAngle}deg)`;
+  }
+
+  function handleClockPointerEvent(e) {
+    const rect = clockFace.getBoundingClientRect();
+    const x = e.clientX - rect.left - (rect.width / 2);
+    const y = e.clientY - rect.top - (rect.height / 2);
+
+    let deg = Math.atan2(y, x) * (180 / Math.PI) + 90;
+    if (deg < 0) deg += 360;
+
+    if (activeClockTab === 'hours') {
+      let hour = Math.round(deg / 30);
+      if (hour === 0) hour = 12;
+      selectedHour = hour;
+    } else {
+      let min = Math.round(deg / 6);
+      if (min === 60) min = 0;
+      selectedMinute = min;
+    }
+    updateAllViews('clock');
+  }
+
+  clockFace.addEventListener('pointerdown', (e) => {
+    isClockDragging = true;
+    clockFace.setPointerCapture(e.pointerId);
+    handleClockPointerEvent(e);
+  });
+
+  clockFace.addEventListener('pointermove', (e) => {
+    if (isClockDragging) handleClockPointerEvent(e);
+  });
+
+  const stopClockDrag = (e) => {
+    if (isClockDragging) {
+      isClockDragging = false;
+      try { clockFace.releasePointerCapture(e.pointerId); } catch(err){}
+    }
+  };
+
+  clockFace.addEventListener('pointerup', stopClockDrag);
+  clockFace.addEventListener('pointercancel', stopClockDrag);
+
+  // --- APPLE ALARM INFINITE WHEEL PICKER LOGIC ---
+  const ITEM_HEIGHT = 44;
+
+  function buildWheelColumns() {
+    // Hours (1-12 duplicated 5x for seamless infinite scroll loop)
+    wheelColHours.innerHTML = '';
+    for (let loop = 0; loop < 5; loop++) {
+      for (let h = 1; h <= 12; h++) {
+        const item = document.createElement('div');
+        item.className = 'wheel-item carved-text';
+        item.dataset.val = h;
+        item.textContent = pad(h);
+        wheelColHours.appendChild(item);
+      }
+    }
+
+    // Minutes (0-59 duplicated 3x for loop)
+    wheelColMinutes.innerHTML = '';
+    for (let loop = 0; loop < 3; loop++) {
+      for (let m = 0; m < 60; m++) {
+        const item = document.createElement('div');
+        item.className = 'wheel-item carved-text';
+        item.dataset.val = m;
+        item.textContent = pad(m);
+        wheelColMinutes.appendChild(item);
+      }
+    }
+
+    // AM / PM Column
+    wheelColAmpm.innerHTML = '';
+    ['AM', 'PM'].forEach(p => {
+      const item = document.createElement('div');
+      item.className = 'wheel-item carved-text';
+      item.dataset.val = p;
+      item.textContent = p;
+      wheelColAmpm.appendChild(item);
+    });
+
+    // Attach scroll events
+    wheelColHours.addEventListener('scroll', () => handleWheelScroll('hours'));
+    wheelColMinutes.addEventListener('scroll', () => handleWheelScroll('minutes'));
+    wheelColAmpm.addEventListener('scroll', () => handleWheelScroll('ampm'));
+  }
+
+  function handleWheelScroll(type) {
+    if (isWheelProgrammaticScroll) return;
+
+    let col, items, itemVal;
+    if (type === 'hours') {
+      col = wheelColHours;
+      const index = Math.round(col.scrollTop / ITEM_HEIGHT);
+      items = col.querySelectorAll('.wheel-item');
+      if (items[index]) {
+        itemVal = parseInt(items[index].dataset.val, 10);
+        if (selectedHour !== itemVal) {
+          selectedHour = itemVal;
+          updateAllViews('wheel');
+        }
+      }
+
+      // Infinite loop boundary jump
+      const maxScroll = (items.length - 5) * ITEM_HEIGHT;
+      if (col.scrollTop < ITEM_HEIGHT * 2) {
+        col.scrollTop += 12 * ITEM_HEIGHT * 2;
+      } else if (col.scrollTop > maxScroll) {
+        col.scrollTop -= 12 * ITEM_HEIGHT * 2;
+      }
+
+    } else if (type === 'minutes') {
+      col = wheelColMinutes;
+      const index = Math.round(col.scrollTop / ITEM_HEIGHT);
+      items = col.querySelectorAll('.wheel-item');
+      if (items[index]) {
+        itemVal = parseInt(items[index].dataset.val, 10);
+        if (selectedMinute !== itemVal) {
+          selectedMinute = itemVal;
+          updateAllViews('wheel');
+        }
+      }
+
+      const maxScroll = (items.length - 10) * ITEM_HEIGHT;
+      if (col.scrollTop < ITEM_HEIGHT * 5) {
+        col.scrollTop += 60 * ITEM_HEIGHT;
+      } else if (col.scrollTop > maxScroll) {
+        col.scrollTop -= 60 * ITEM_HEIGHT;
+      }
+
+    } else if (type === 'ampm') {
+      col = wheelColAmpm;
+      const index = Math.round(col.scrollTop / ITEM_HEIGHT);
+      items = col.querySelectorAll('.wheel-item');
+      if (items[index]) {
+        itemVal = items[index].dataset.val;
+        if (selectedAmPm !== itemVal) {
+          selectedAmPm = itemVal;
+          updateAllViews('wheel');
+        }
+      }
+    }
+
+    highlightActiveWheelItems();
+  }
+
+  function highlightActiveWheelItems() {
+    // Hours
+    const hIdx = Math.round(wheelColHours.scrollTop / ITEM_HEIGHT);
+    wheelColHours.querySelectorAll('.wheel-item').forEach((el, i) => {
+      el.classList.toggle('active', i === hIdx);
+    });
+
+    // Minutes
+    const mIdx = Math.round(wheelColMinutes.scrollTop / ITEM_HEIGHT);
+    wheelColMinutes.querySelectorAll('.wheel-item').forEach((el, i) => {
+      el.classList.toggle('active', i === mIdx);
+    });
+
+    // AM PM
+    const pIdx = Math.round(wheelColAmpm.scrollTop / ITEM_HEIGHT);
+    wheelColAmpm.querySelectorAll('.wheel-item').forEach((el, i) => {
+      el.classList.toggle('active', i === pIdx);
+    });
+  }
+
+  function syncWheelPositions() {
+    isWheelProgrammaticScroll = true;
+
+    // Scroll hours to middle set (Set 2)
+    const targetHIndex = 12 * 2 + (selectedHour - 1);
+    wheelColHours.scrollTop = targetHIndex * ITEM_HEIGHT;
+
+    // Scroll minutes to middle set (Set 1)
+    const targetMIndex = 60 * 1 + selectedMinute;
+    wheelColMinutes.scrollTop = targetMIndex * ITEM_HEIGHT;
+
+    // Scroll AM/PM
+    const targetPIndex = selectedAmPm === 'AM' ? 0 : 1;
+    wheelColAmpm.scrollTop = targetPIndex * ITEM_HEIGHT;
+
+    highlightActiveWheelItems();
+
+    setTimeout(() => {
+      isWheelProgrammaticScroll = false;
+    }, 50);
+  }
+
+  // --- SLIDERS EVENTS ---
+  sliderHh.addEventListener('input', (e) => {
+    selectedHour = parseInt(e.target.value, 10);
+    updateAllViews('sliders');
+  });
+
+  sliderMm.addEventListener('input', (e) => {
+    selectedMinute = parseInt(e.target.value, 10);
+    updateAllViews('sliders');
+  });
+
+  // --- TAB CONTROLS & LISTENERS ---
+  modeClockBtn.addEventListener('click', () => switchView('clock'));
+  modeWheelBtn.addEventListener('click', () => switchView('wheel'));
+  modeSliderBtn.addEventListener('click', () => switchView('slider'));
+
+  tabHours.addEventListener('click', () => {
+    activeClockTab = 'hours';
+    tabHours.classList.add('active');
+    tabMinutes.classList.remove('active');
+    dispHours.classList.add('active-target');
+    dispMinutes.classList.remove('active-target');
+    updateClockUI();
+  });
+
+  tabMinutes.addEventListener('click', () => {
+    activeClockTab = 'minutes';
+    tabMinutes.classList.add('active');
+    tabHours.classList.remove('active');
+    dispMinutes.classList.add('active-target');
+    dispHours.classList.remove('active-target');
+    updateClockUI();
+  });
+
+  ampmAm.addEventListener('click', () => {
+    selectedAmPm = 'AM';
+    updateAllViews();
+  });
+
+  ampmPm.addEventListener('click', () => {
+    selectedAmPm = 'PM';
+    updateAllViews();
+  });
+
+  dispHours.addEventListener('click', () => {
+    activeClockTab = 'hours';
+    tabHours.classList.add('active');
+    tabMinutes.classList.remove('active');
+    dispHours.classList.add('active-target');
+    dispMinutes.classList.remove('active-target');
+    updateClockUI();
+  });
+
+  dispMinutes.addEventListener('click', () => {
+    activeClockTab = 'minutes';
+    tabMinutes.classList.add('active');
+    tabHours.classList.remove('active');
+    dispMinutes.classList.add('active-target');
+    dispHours.classList.remove('active-target');
+    updateClockUI();
+  });
+
+  // Actions
+  resetBtn.addEventListener('click', () => {
+    selectedHour = 6;
+    selectedMinute = 40;
+    selectedAmPm = 'PM';
+    updateAllViews();
+  });
+
+  submitBtn.addEventListener('click', () => {
+    alert(`Selected Time: ${pad(selectedHour)}:${pad(selectedMinute)} ${selectedAmPm}`);
+  });
+
+  // Initial Boot
+  buildWheelColumns();
+  updateAllViews();
+  initResponsiveView();
+</script>
+
+</body>
+</html>

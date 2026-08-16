@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dual Neumorphic Date Range Picker</title>
+  <style>
+    :root {
+      /* Warm Beige Neumorphic Palette */
+      --bg-color: #f0ece6;
+      --shadow-dark: #d3ccc3;
+      --shadow-light: #ffffff;
+      
+      /* Subtle Carved Text System */
+      --text-main: #585047;
+      --text-carved-shadow: -1px -1px 1px #c5bcb0, 1px 1px 1px #ffffff;
+      
+      /* Vibrant Coral Accent */
+      --coral-accent: #ff6849;
+      --coral-glow: rgba(255, 104, 73, 0.35);
+      
+      /* Outer Card Shadow */
+      --shadow-extruded-card: 20px 20px 40px var(--shadow-dark), -20px -20px 40px var(--shadow-light);
+      --shadow-extruded-btn: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
+      --shadow-pressed-slot: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+
+    /* 0.8x Scale Container Wrapper */
+    .picker-wrapper {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transform: scale(0.8);
+      transform-origin: center center;
+    }
+
+    /* Main Floating Container (Accommodates 2 Months) */
+    .picker-container {
+      width: 780px;
+      background: var(--bg-color);
+      border-radius: 36px;
+      padding: 32px;
+      box-shadow: var(--shadow-extruded-card);
+    }
+
+    /* Carved Text Utility (Simple Non-Bold) */
+    .carved-text {
+      color: var(--text-main);
+      text-shadow: var(--text-carved-shadow);
+      font-weight: 400;
+    }
+
+    /* Recessed Header Display Slot */
+    .range-display {
+      background: var(--bg-color);
+      border-radius: 20px;
+      padding: 16px 24px;
+      margin-bottom: 22px;
+      box-shadow: var(--shadow-pressed-slot);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .range-display .placeholder {
+      opacity: 0.55;
+      font-weight: 400;
+    }
+
+    .arrow-icon {
+      color: var(--coral-accent);
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+
+    /* Preset Quick Tabs */
+    .presets-row {
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      margin-bottom: 26px;
+    }
+
+    .preset-btn {
+      flex: 1;
+      padding: 12px 10px;
+      border: none;
+      border-radius: 16px;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-extruded-btn);
+      font-size: 0.88rem;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+
+    .preset-btn:active, .preset-btn.active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      color: var(--coral-accent);
+    }
+
+    /* Dual Calendars Side-by-Side */
+    .calendars-flex {
+      display: flex;
+      gap: 32px;
+    }
+
+    .calendar-pane {
+      flex: 1;
+    }
+
+    /* Month Navigation Header */
+    .calendar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      height: 40px;
+    }
+
+    .month-year {
+      font-size: 1.1rem;
+      font-weight: 500;
+      letter-spacing: 0.3px;
+    }
+
+    /* Extruded Round Nav Buttons */
+    .nav-btn {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-extruded-btn);
+      color: var(--coral-accent);
+      font-size: 1.2rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+      outline: none;
+    }
+
+    .nav-btn:active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      transform: scale(0.95);
+    }
+
+    .nav-btn.placeholder-spacer {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    /* Weekday Column Titles */
+    .weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 0.85rem;
+      font-weight: 500;
+    }
+
+    /* Days Grid Layout */
+    .days-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      row-gap: 8px; /* Vertical gap between calendar weeks */
+      column-gap: 0; /* Zero horizontal gap for continuous selection trench */
+    }
+
+    .day-cell {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      font-weight: 400;
+      cursor: pointer;
+      user-select: none;
+      background: transparent;
+      position: relative;
+    }
+
+    .day-cell.empty {
+      cursor: default;
+    }
+
+    /* Default Hover on unselected days */
+    .day-cell.interactive:hover:not(.in-trench) {
+      background: var(--bg-color);
+      box-shadow: var(--shadow-extruded-btn);
+      border-radius: 50%;
+      z-index: 2;
+    }
+
+    /* --- CONTINUOUS RECESSED TRENCH RANGE --- */
+
+    .day-cell.in-trench {
+      background: var(--bg-color);
+      box-shadow: inset 0px 4px 5px var(--shadow-dark), inset 0px -4px 5px var(--shadow-light);
+      z-index: 1;
+    }
+
+    /* Left Cap of Selection Trench */
+    .day-cell.trench-cap-left {
+      border-top-left-radius: 22px;
+      border-bottom-left-radius: 22px;
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+      box-shadow: inset 4px 4px 5px var(--shadow-dark), inset 0px -4px 5px var(--shadow-light);
+    }
+
+    /* Right Cap of Selection Trench */
+    .day-cell.trench-cap-right {
+      border-top-right-radius: 22px;
+      border-bottom-right-radius: 22px;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      box-shadow: inset -4px 4px 5px var(--shadow-dark), inset 0px -4px 5px var(--shadow-light);
+    }
+
+    /* Standalone Single Day Trench */
+    .day-cell.trench-cap-left.trench-cap-right {
+      border-radius: 22px;
+      box-shadow: inset 4px 4px 6px var(--shadow-dark), inset -4px -4px 6px var(--shadow-light);
+    }
+
+    /* --- RAISED NEUMORPHIC START & END BADGES --- */
+
+    .day-cell .raised-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--coral-accent);
+      color: #ffffff;
+      font-weight: 500;
+      text-shadow: 0px 1px 1px rgba(0, 0, 0, 0.25);
+      
+      /* Raised Extruded Neumorphic Shadow */
+      box-shadow: 3px 3px 7px rgba(170, 45, 15, 0.45), 
+                  -2px -2px 5px rgba(255, 255, 255, 0.8), 
+                  0px 4px 12px var(--coral-glow);
+      z-index: 5;
+    }
+
+    /* Footer Actions Row */
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .btn-clear {
+      border: none;
+      padding: 12px 26px;
+      border-radius: 16px;
+      background: var(--bg-color);
+      box-shadow: var(--shadow-extruded-btn);
+      color: var(--text-main);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .btn-clear:active {
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+      transform: scale(0.96);
+    }
+
+    .btn-submit {
+      border: none;
+      padding: 12px 30px;
+      border-radius: 16px;
+      background: var(--coral-accent);
+      color: #ffffff;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      box-shadow: 3px 3px 7px rgba(170, 45, 15, 0.45), 
+                  -2px -2px 5px rgba(255, 255, 255, 0.8), 
+                  0px 4px 12px var(--coral-glow);
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+
+    .btn-submit:active {
+      transform: scale(0.96);
+      box-shadow: inset 2px 2px 4px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+
+<div class="picker-wrapper">
+  <div class="picker-container">
+    
+    <!-- Recessed Date Display Bar -->
+    <div class="range-display carved-text">
+      <span id="start-date-text" class="placeholder">Start Date</span>
+      <span class="arrow-icon">&rarr;</span>
+      <span id="end-date-text" class="placeholder">End Date</span>
+    </div>
+
+    <!-- Quick Preset Tabs -->
+    <div class="presets-row">
+      <button class="preset-btn carved-text" data-days="7">Last 7 Days</button>
+      <button class="preset-btn carved-text" data-days="15">Last 15 Days</button>
+      <button class="preset-btn carved-text" data-days="30">Last 30 Days</button>
+      <button class="preset-btn carved-text" data-days="45">Last 45 Days</button>
+    </div>
+
+    <!-- Dual Month Calendar Views -->
+    <div class="calendars-flex">
+      
+      <!-- Left Calendar Pane -->
+      <div class="calendar-pane">
+        <div class="calendar-header">
+          <button class="nav-btn" id="prev-month">&lsaquo;</button>
+          <div class="month-year carved-text" id="left-month-label"></div>
+          <div class="nav-btn placeholder-spacer"></div>
+        </div>
+        <div class="weekdays carved-text">
+          <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+        </div>
+        <div class="days-grid" id="left-days-grid"></div>
+      </div>
+
+      <!-- Right Calendar Pane -->
+      <div class="calendar-pane">
+        <div class="calendar-header">
+          <div class="nav-btn placeholder-spacer"></div>
+          <div class="month-year carved-text" id="right-month-label"></div>
+          <button class="nav-btn" id="next-month">&rsaquo;</button>
+        </div>
+        <div class="weekdays carved-text">
+          <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+        </div>
+        <div class="days-grid" id="right-days-grid"></div>
+      </div>
+
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="actions">
+      <button class="btn-clear" id="clear-btn">Clear</button>
+      <button class="btn-submit" id="submit-btn">Submit</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  let currentDate = new Date(); // Controls the base month displayed on Left pane
+  let startDate = null;
+  let endDate = null;
+  let hoverDate = null;
+  let activePresetDays = null;
+
+  const leftMonthLabel = document.getElementById('left-month-label');
+  const rightMonthLabel = document.getElementById('right-month-label');
+  const leftDaysGrid = document.getElementById('left-days-grid');
+  const rightDaysGrid = document.getElementById('right-days-grid');
+  
+  const startDateText = document.getElementById('start-date-text');
+  const endDateText = document.getElementById('end-date-text');
+  
+  const prevBtn = document.getElementById('prev-month');
+  const nextBtn = document.getElementById('next-month');
+  const clearBtn = document.getElementById('clear-btn');
+  const submitBtn = document.getElementById('submit-btn');
+  const presetBtns = document.querySelectorAll('.preset-btn');
+
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+
+  let cellElements = [];
+
+  function isSameDay(d1, d2) {
+    if (!d1 || !d2) return false;
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  }
+
+  // Build structure for both left and right calendars
+  function buildCalendars() {
+    const leftYear = currentDate.getFullYear();
+    const leftMonth = currentDate.getMonth();
+
+    const rightDate = new Date(leftYear, leftMonth + 1, 1);
+    const rightYear = rightDate.getFullYear();
+    const rightMonth = rightDate.getMonth();
+
+    leftMonthLabel.textContent = `${monthNames[leftMonth]} ${leftYear}`;
+    rightMonthLabel.textContent = `${monthNames[rightMonth]} ${rightYear}`;
+
+    leftDaysGrid.innerHTML = '';
+    rightDaysGrid.innerHTML = '';
+    cellElements = [];
+
+    // Render Left Month
+    renderSingleMonthGrid(leftYear, leftMonth, leftDaysGrid);
+    // Render Right Month
+    renderSingleMonthGrid(rightYear, rightMonth, rightDaysGrid);
+
+    updateGridState();
+  }
+
+  function renderSingleMonthGrid(year, month, container) {
+    const firstDayIndex = new Date(year, month, 1).getDay();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+
+    // Padding cells before day 1
+    for (let i = 0; i < firstDayIndex; i++) {
+      const emptyCell = document.createElement('div');
+      emptyCell.className = 'day-cell empty';
+      container.appendChild(emptyCell);
+    }
+
+    // Active month day cells
+    for (let day = 1; day <= totalDays; day++) {
+      const cell = document.createElement('div');
+      const dateObj = new Date(year, month, day);
+      const colIndex = (firstDayIndex + day - 1) % 7;
+
+      cell.className = 'day-cell interactive carved-text';
+      
+      cellElements.push({
+        element: cell,
+        date: dateObj,
+        colIndex: colIndex
+      });
+
+      // Events
+      cell.addEventListener('click', (e) => {
+        e.stopPropagation();
+        clearPresetTabs();
+        handleDateClick(dateObj);
+      });
+
+      cell.addEventListener('mouseenter', () => {
+        if (startDate && !endDate) {
+          hoverDate = dateObj;
+          updateGridState();
+        }
+      });
+
+      container.appendChild(cell);
+    }
+  }
+
+  // Pure dynamic state update layer across both grids
+  function updateGridState() {
+    let effStart = null;
+    let effEnd = null;
+
+    if (startDate && endDate) {
+      effStart = startDate < endDate ? startDate : endDate;
+      effEnd = startDate < endDate ? endDate : startDate;
+    } else if (startDate && !endDate && hoverDate) {
+      effStart = startDate < hoverDate ? startDate : hoverDate;
+      effEnd = startDate < hoverDate ? hoverDate : startDate;
+    } else if (startDate && !endDate) {
+      effStart = startDate;
+      effEnd = null;
+    }
+
+    cellElements.forEach(({ element, date, colIndex }) => {
+      element.className = 'day-cell interactive carved-text';
+      element.innerHTML = date.getDate();
+
+      const isStart = effStart && isSameDay(date, effStart);
+      const isEnd = effEnd && isSameDay(date, effEnd);
+      const isInBetween = effStart && effEnd && date > effStart && date < effEnd;
+
+      const inRange = isStart || isEnd || isInBetween;
+
+      if (inRange) {
+        element.classList.add('in-trench');
+
+        if (isStart || colIndex === 0) {
+          element.classList.add('trench-cap-left');
+        }
+
+        if (isEnd || colIndex === 6 || (isStart && !effEnd)) {
+          element.classList.add('trench-cap-right');
+        }
+
+        if (isStart || isEnd) {
+          const badge = document.createElement('div');
+          badge.className = 'raised-badge';
+          badge.textContent = date.getDate();
+          element.innerHTML = '';
+          element.appendChild(badge);
+        }
+      }
+    });
+
+    updateDisplayText();
+  }
+
+  function handleDateClick(date) {
+    if (!startDate || (startDate && endDate)) {
+      startDate = new Date(date);
+      endDate = null;
+      hoverDate = null;
+    } else if (startDate && !endDate) {
+      if (date < startDate) {
+        startDate = new Date(date);
+        endDate = null;
+      } else {
+        endDate = new Date(date);
+        hoverDate = null;
+      }
+    }
+    updateGridState();
+  }
+
+  function formatDate(d) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function updateDisplayText() {
+    if (startDate) {
+      startDateText.textContent = formatDate(startDate);
+      startDateText.classList.remove('placeholder');
+    } else {
+      startDateText.textContent = 'Start Date';
+      startDateText.classList.add('placeholder');
+    }
+
+    if (endDate) {
+      endDateText.textContent = formatDate(endDate);
+      endDateText.classList.remove('placeholder');
+    } else {
+      endDateText.textContent = 'End Date';
+      endDateText.classList.add('placeholder');
+    }
+  }
+
+  function clearPresetTabs() {
+    activePresetDays = null;
+    presetBtns.forEach(btn => btn.classList.remove('active'));
+  }
+
+  // Handle preset pill clicks
+  presetBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const days = parseInt(btn.dataset.days, 10);
+      activePresetDays = days;
+
+      presetBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const today = new Date();
+      endDate = new Date(today);
+      
+      startDate = new Date(today);
+      startDate.setDate(today.getDate() - (days - 1));
+
+      // Adjust view so range is comfortably visible
+      currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+
+      hoverDate = null;
+      buildCalendars();
+    });
+  });
+
+  // Global Hover Clear
+  document.querySelectorAll('.days-grid').forEach(grid => {
+    grid.addEventListener('mouseleave', () => {
+      if (startDate && !endDate) {
+        hoverDate = null;
+        updateGridState();
+      }
+    });
+  });
+
+  prevBtn.addEventListener('click', () => {
+    currentDate.setMonth(currentDate.getMonth() - 1);
+    buildCalendars();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    currentDate.setMonth(currentDate.getMonth() + 1);
+    buildCalendars();
+  });
+
+  clearBtn.addEventListener('click', () => {
+    startDate = null;
+    endDate = null;
+    hoverDate = null;
+    clearPresetTabs();
+    updateGridState();
+  });
+
+  submitBtn.addEventListener('click', () => {
+    if (startDate && endDate) {
+      alert(`Selected Range:\nFrom: ${formatDate(startDate)}\nTo: ${formatDate(endDate)}`);
+    } else if (startDate) {
+      alert(`Please select an end date.\nStart Date: ${formatDate(startDate)}`);
+    } else {
+      alert('Please select a date range first.');
+    }
+  });
+
+  // Initial setup
+  buildCalendars();
+</script>
+
+</body>
+</html>

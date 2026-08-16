@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leave Analytics — 3D Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg1:#060c18;--bg2:#0d1525;
+  --surface:rgba(12,20,45,0.85);--surface2:rgba(20,30,60,0.9);
+  --border:rgba(80,160,255,0.18);
+  --text1:#d8eeff;--text2:#6a9fd8;--text3:#2a4a70;
+  --paid:#1fd19a;--unpaid:#3a6cf7;
+  --paid-light:#4fffc0;--unpaid-light:#7aa8ff;
+  --accent:#4a90ff;--accent2:#00d4aa;
+  --grid:#0a2040;
+}
+.day{
+  --bg1:#c8d8f0;--bg2:#dce8fa;
+  --surface:rgba(240,246,255,0.92);--surface2:rgba(220,234,255,0.95);
+  --border:rgba(60,120,220,0.2);
+  --text1:#0a1a40;--text2:#2a5080;--text3:#6090c0;
+  --paid:#0a9e76;--unpaid:#1a4ec0;
+  --paid-light:#0fd4a0;--unpaid-light:#4a80f0;
+  --accent:#1a60e0;--accent2:#00a880;
+  --grid:#b0c8e8;
+}
+body{
+  font-family:'Syne',sans-serif;
+  background:var(--bg1);color:var(--text1);
+  min-height:100vh;overflow-x:hidden;
+  transition:background .7s,color .5s;
+}
+#bg-canvas{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
+
+.wrapper{position:relative;z-index:1;padding:1.6rem 2rem 3rem;max-width:1280px;margin:0 auto}
+
+/* Top bar (legend + mode toggle only — no heading, no stat cards) */
+.top-bar{display:flex;align-items:center;justify-content:flex-end;gap:1rem;margin-bottom:1.4rem;flex-wrap:wrap}
+.legend{display:flex;gap:1.4rem;flex-wrap:wrap;margin-right:auto}
+.legend-item{display:flex;align-items:center;gap:7px;font-size:.82rem;font-weight:600;color:var(--text2)}
+.ldot{width:10px;height:10px;border-radius:50%}
+
+.mode-btn{
+  display:flex;align-items:center;gap:7px;
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text1);font-family:'Syne',sans-serif;font-size:.82rem;font-weight:700;
+  padding:9px 18px;border-radius:50px;cursor:pointer;
+  transition:all .3s;backdrop-filter:blur(12px);
+}
+.mode-btn:hover{border-color:var(--accent);transform:scale(1.04)}
+
+/* Chart switcher */
+.chart-switcher{display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:2rem;flex-wrap:wrap}
+.sw-btn{
+  font-family:'DM Mono',monospace;font-size:.76rem;font-weight:500;
+  padding:8px 16px;border-radius:50px;border:1px solid var(--border);
+  background:transparent;color:var(--text2);cursor:pointer;transition:all .25s;white-space:nowrap;
+}
+.sw-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 0 20px rgba(74,144,255,0.4)}
+.sw-btn:hover:not(.active){border-color:var(--accent);color:var(--text1);transform:translateY(-1px)}
+
+/* Chart container */
+.chart-stage{
+  background:var(--surface);border:1px solid var(--border);border-radius:24px;
+  padding:1.5rem;backdrop-filter:blur(20px);
+  box-shadow:0 12px 60px rgba(0,0,0,0.4);
+  min-height:520px;position:relative;
+  opacity:0;transform:translateY(24px) scale(.98);
+  transition:opacity .7s,transform .7s,background .5s;
+}
+.chart-stage.vis{opacity:1;transform:translateY(0) scale(1)}
+.stage-label{font-size:.75rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);font-family:'DM Mono',monospace}
+.stage-title{font-size:1.1rem;font-weight:700;margin:3px 0 1rem}
+
+.chart-panel{position:absolute;top:0;left:0;width:100%;height:100%;
+  opacity:0;pointer-events:none;transition:opacity .45s ease;padding:1.5rem}
+.chart-panel.active{opacity:1;pointer-events:all}
+
+canvas.cc{display:block;width:100%!important;cursor:crosshair}
+
+/* Combo month tabs */
+.month-tabs{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 1rem}
+.mt-btn{font-size:.7rem;font-weight:700;font-family:'DM Mono',monospace;
+  padding:4px 9px;border-radius:7px;border:1px solid var(--border);
+  background:transparent;color:var(--text2);cursor:pointer;transition:all .2s}
+.mt-btn.active,.mt-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* Tooltip */
+#tip{
+  position:fixed;background:var(--surface2);border:1px solid var(--border);
+  border-radius:11px;padding:9px 13px;pointer-events:none;
+  font-size:.8rem;color:var(--text1);z-index:200;
+  box-shadow:0 8px 30px rgba(0,0,0,0.5);
+  opacity:0;transform:translateY(4px);transition:opacity .18s,transform .18s;
+  backdrop-filter:blur(16px);white-space:nowrap;
+}
+#tip.on{opacity:1;transform:translateY(0)}
+#tip strong{font-weight:700;display:block;margin-bottom:3px}
+.tp{color:var(--paid)}
+.tu{color:var(--unpaid)}
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div id="tip"></div>
+
+<div class="wrapper">
+
+<div class="top-bar">
+  <div class="legend">
+    <div class="legend-item"><div class="ldot" style="background:var(--paid);box-shadow:0 0 8px var(--paid)"></div>Paid Leave</div>
+    <div class="legend-item"><div class="ldot" style="background:var(--unpaid);box-shadow:0 0 8px var(--unpaid)"></div>Unpaid Leave</div>
+  </div>
+  <button class="mode-btn" onclick="toggleMode()">
+    <span id="modeIcon">☀️</span><span id="modeText">Day Mode</span>
+  </button>
+</div>
+
+<div class="chart-switcher">
+  <button class="sw-btn active" onclick="switchChart('donut',this)">⬤ Toroid Donut</button>
+  <button class="sw-btn" onclick="switchChart('pie',this)">◉ 3D Pie</button>
+  <button class="sw-btn" onclick="switchChart('combo',this)">▐▌ Combined Bars</button>
+  <button class="sw-btn" onclick="switchChart('area',this)">▲ Area</button>
+  <button class="sw-btn" onclick="switchChart('line',this)">╱ Line</button>
+  <button class="sw-btn" onclick="switchChart('radar',this)">✦ Radar</button>
+  <button class="sw-btn" onclick="switchChart('polar',this)">◍ Polar</button>
+  <button class="sw-btn" onclick="switchChart('tower',this)">▮ Tower</button>
+</div>
+
+<div class="chart-stage" id="stage">
+  <!-- DONUT PANEL -->
+  <div class="chart-panel active" id="panel-donut">
+    <div class="stage-label" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span>True Toroidal Rendering · Per-Month Segments</span>
+      <button class="mt-btn active" id="donutSmoothBtn" onclick="toggleDonutSmooth()" style="text-transform:none;letter-spacing:0;font-size:.72rem">✧ Smooth Shape: On</button>
+    </div>
+    <div class="stage-title">Annual Leave Donut — All 12 Months</div>
+    <canvas id="donutCanvas" class="cc" height="460"></canvas>
+  </div>
+
+  <!-- PIE PANEL -->
+  <div class="chart-panel" id="panel-pie">
+    <div class="stage-label">3D Tilted Pie · Rounded Segment Edges</div>
+    <div class="stage-title">Paid vs Unpaid — Proportional Split</div>
+    <canvas id="pieCanvas" class="cc" height="460"></canvas>
+  </div>
+
+  <!-- COMBO PANEL -->
+  <div class="chart-panel" id="panel-combo">
+    <div class="stage-label">Combined Bar Chart · Monthly Breakdown</div>
+    <div class="stage-title">Paid &amp; Unpaid Leaves — Full Year Side by Side</div>
+    <div class="month-tabs" id="mTabs"></div>
+    <canvas id="comboCanvas" class="cc" height="400"></canvas>
+  </div>
+
+  <!-- AREA PANEL -->
+  <div class="chart-panel" id="panel-area">
+    <div class="stage-label">Stacked Area · Glow Fill</div>
+    <div class="stage-title">Leave Volume Over the Year</div>
+    <canvas id="areaCanvas" class="cc" height="420"></canvas>
+  </div>
+
+  <!-- LINE PANEL -->
+  <div class="chart-panel" id="panel-line">
+    <div class="stage-label">Dual Trend Line · Glowing Nodes</div>
+    <div class="stage-title">Paid vs Unpaid Trend</div>
+    <canvas id="lineCanvas" class="cc" height="420"></canvas>
+  </div>
+
+  <!-- RADAR PANEL -->
+  <div class="chart-panel" id="panel-radar">
+    <div class="stage-label">12-Axis Radar · Stacked Polygons</div>
+    <div class="stage-title">Monthly Leave Radar</div>
+    <canvas id="radarCanvas" class="cc" height="460"></canvas>
+  </div>
+
+  <!-- POLAR PANEL -->
+  <div class="chart-panel" id="panel-polar">
+    <div class="stage-label">Polar Area · Nightingale Rose</div>
+    <div class="stage-title">Monthly Leave Distribution</div>
+    <canvas id="polarCanvas" class="cc" height="460"></canvas>
+  </div>
+
+  <!-- TOWER PANEL -->
+  <div class="chart-panel" id="panel-tower">
+    <div class="stage-label">3D Cylindrical Towers · Skyline View</div>
+    <div class="stage-title">Total Leave Days by Month</div>
+    <canvas id="towerCanvas" class="cc" height="460"></canvas>
+  </div>
+
+</div>
+</div>
+
+<script>
+/* ── DATA ── */
+const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const PAID=[8,6,10,7,12,9,14,11,8,6,10,13];
+const UNPD=[3,2,4,3,5,4,6,4,3,2,4,5];
+const TOT=MO.map((_,i)=>PAID[i]+UNPD[i]);
+const tP=PAID.reduce((a,b)=>a+b,0);
+const tU=UNPD.reduce((a,b)=>a+b,0);
+const tA=tP+tU;
+const maxTotal=Math.max(...TOT);
+const peakI=TOT.reduce((mi,v,i,a)=>v>a[mi]?i:mi,0);
+
+let isDay=false,activeChart='donut',selMonth=null;
+let dRot=0,dAnim=0,donutRAF=null;
+let pRot=0,pAnim=0,pieRAF=null;
+let cAnim=0,comboRAF=null,hovBar=null;
+
+/* donut/pie hover + smooth-toggle state */
+let donutSmooth=true;
+let hovDonutIdx=null,hovPieIdx=null;
+let lastDonutSegs=[],lastDonutCx=0,lastDonutCy=0,lastDonutR=0,lastDonutr=0,lastDonutTilt=0;
+let lastPieSegs=[],lastPieCx=0,lastPieCy=0,lastPieR=0,lastPieTilt=0;
+
+/* ── COLORS ── */
+function C(){
+  return{
+    paid:isDay?'#0a9e76':'#1fd19a',
+    unpaid:isDay?'#1a4ec0':'#3a6cf7',
+    paidL:isDay?'#0fd4a0':'#4fffc0',
+    unpaidL:isDay?'#4a80f0':'#7aa8ff',
+    text:isDay?'#0a1a40':'#d8eeff',
+    text2:isDay?'rgba(40,80,130,0.8)':'rgba(106,159,216,0.8)',
+    grid:isDay?'rgba(80,130,200,0.18)':'rgba(40,100,180,0.2)',
+    bg:isDay?'rgba(220,235,255,0)':'rgba(6,12,24,0)'
+  };
+}
+
+/* ── EASE ── */
+const eoc=t=>1-Math.pow(1-t,3);
+const eio=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+
+function hexRGB(hex){
+  const h=hex.replace('#','');
+  return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+}
+
+/* ── 3D BACKGROUND ── */
+const bgC=document.getElementById('bg-canvas');
+const bgX=bgC.getContext('2d');
+let BW,BH,pts=[];
+function resizeBG(){BW=bgC.width=innerWidth;BH=bgC.height=innerHeight;makePts()}
+function makePts(){
+  pts=[];
+  for(let i=0;i<80;i++) pts.push({x:Math.random()*BW,y:Math.random()*BH,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,r:Math.random()*2.5+.5,h:Math.random()<.5?195:220,a:Math.random()*.5+.08});
+}
+function drawBG(){
+  bgX.clearRect(0,0,BW,BH);
+  if(!isDay){
+    const g=bgX.createRadialGradient(BW*.3,BH*.25,0,BW*.3,BH*.25,BW*.65);
+    g.addColorStop(0,'rgba(20,60,150,0.22)');g.addColorStop(1,'rgba(0,0,0,0)');
+    bgX.fillStyle=g;bgX.fillRect(0,0,BW,BH);
+    bgX.save();bgX.globalAlpha=0.18;bgX.strokeStyle='#1a6080';bgX.lineWidth=.7;
+    const gy=BH*.72,vx=BW/2;
+    for(let i=0;i<22;i++){const x=BW*i/21;bgX.beginPath();bgX.moveTo(x,gy);bgX.lineTo(vx,gy*.15);bgX.stroke()}
+    for(let j=0;j<14;j++){
+      const frac=j/13,yy=gy+(BH-gy)*frac;
+      const spread=frac*.7;
+      bgX.beginPath();bgX.moveTo(BW*(0.5-spread),yy);bgX.lineTo(BW*(0.5+spread),yy);bgX.stroke();
+    }
+    bgX.restore();
+  } else {
+    const g=bgX.createRadialGradient(BW*.5,0,0,BW*.5,0,BH*.8);
+    g.addColorStop(0,'rgba(160,200,255,0.25)');g.addColorStop(1,'rgba(200,220,255,0)');
+    bgX.fillStyle=g;bgX.fillRect(0,0,BW,BH);
+  }
+  pts.forEach(p=>{
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0)p.x=BW;if(p.x>BW)p.x=0;if(p.y<0)p.y=BH;if(p.y>BH)p.y=0;
+    const pg=bgX.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r*4);
+    pg.addColorStop(0,`hsla(${p.h},85%,65%,${isDay?p.a*.4:p.a})`);
+    pg.addColorStop(1,`hsla(${p.h},85%,65%,0)`);
+    bgX.beginPath();bgX.arc(p.x,p.y,p.r*4,0,Math.PI*2);bgX.fillStyle=pg;bgX.fill();
+  });
+  requestAnimationFrame(drawBG);
+}
+window.addEventListener('resize',resizeBG);resizeBG();drawBG();
+
+/* ── TOOLTIP ── */
+const tip=document.getElementById('tip');
+function showTip(e,h){tip.innerHTML=h;tip.classList.add('on');tip.style.left=(e.clientX+14)+'px';tip.style.top=(e.clientY-35)+'px'}
+function hideTip(){tip.classList.remove('on')}
+function tipHTML(i){return `<strong>${MO[i]}</strong><span class="tp"> Paid: ${PAID[i]}d</span> · <span class="tu">Unpaid: ${UNPD[i]}d</span>`}
+
+/* ── shared canvas setup helper (handles DPR scaling) ── */
+function setupCanvas(canvas,ctx,h){
+  const w=canvas.offsetWidth||700;
+  canvas.width=w*devicePixelRatio;canvas.height=h*devicePixelRatio;canvas.style.height=h+'px';
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(devicePixelRatio,devicePixelRatio);
+  ctx.clearRect(0,0,w,h);
+  return w;
+}
+
+/* Precompute RGB for the two core colors once per render pass (perf) */
+function paletteRGB(col){
+  return{paid:hexRGB(col.paid),unpaid:hexRGB(col.unpaid)};
+}
+
+/* shared curve-smoothing helper (quadratic midpoint smoothing) */
+function smoothPath(ctx,pts){
+  ctx.moveTo(pts[0].x,pts[0].y);
+  smoothCurveTo(ctx,pts);
+}
+/* same smoothing, but assumes ctx is already positioned at pts[0] (no moveTo) —
+   needed when the curve is part of a larger subpath, e.g. a filled area with a flat base */
+function smoothCurveTo(ctx,pts){
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i],p1=pts[i+1];
+    const mx=(p0.x+p1.x)/2,my=(p0.y+p1.y)/2;
+    ctx.quadraticCurveTo(p0.x,p0.y,mx,my);
+  }
+  const last=pts[pts.length-1];
+  ctx.lineTo(last.x,last.y);
+}
+
+/* ══════════════════════════════════════════
+   DONUT — TRUE TOROIDAL TORUS (optimized)
+══════════════════════════════════════════ */
+const dC=document.getElementById('donutCanvas');
+const dX=dC.getContext('2d');
+
+/* reduced resolution for performance: ringSteps 240->104, tubeSteps 32->14 */
+const D_RING_STEPS=104, D_TUBE_STEPS=14;
+/* higher resolution used when "Smooth Shape" toggle is on — hides facet edges */
+const D_RING_STEPS_SMOOTH=360, D_TUBE_STEPS_SMOOTH=64;
+
+function drawTorus(ctx,cx,cy,R,r,tilt,rot,segs,progress,hoverIdx){
+  const ringSteps=donutSmooth?D_RING_STEPS_SMOOTH:D_RING_STEPS;
+  const tubeSteps=donutSmooth?D_TUBE_STEPS_SMOOTH:D_TUBE_STEPS;
+  const PI2=Math.PI*2;
+  const lightDir={x:0.4,y:-0.6,z:0.7};
+  const cosTilt=Math.cos(tilt),sinTilt=Math.sin(tilt);
+
+  /* cache rgb per unique color to avoid re-parsing hex every quad */
+  const rgbCache={};
+  segs.forEach(s=>{ if(!rgbCache[s.color]) rgbCache[s.color]=hexRGB(s.color); });
+
+  const quads=[];
+  for(let si=0;si<ringSteps;si++){
+    const a0=PI2*si/ringSteps;
+    const a1=PI2*(si+1)/ringSteps;
+    const aMid=(a0+a1)/2;
+    let segIdx=segs.length-1;
+    for(let s=0;s<segs.length;s++){
+      if(aMid*progress>=segs[s].aStart && aMid*progress<segs[s].aEnd){segIdx=s;break}
+    }
+    const seg=segs[segIdx];
+    const ca=aMid+rot;
+    const depth3=R*Math.sin(ca)*cosTilt;
+    quads.push({a0,a1,depth:depth3,seg,segIdx});
+  }
+  quads.sort((a,b)=>a.depth-b.depth);
+
+  /* precompute tube phi cos/sin once (shared across all quads) */
+  const phiCos=[],phiSin=[];
+  for(let k=0;k<tubeSteps;k++){const phi=PI2*k/tubeSteps;phiCos.push(Math.cos(phi));phiSin.push(Math.sin(phi))}
+
+  quads.forEach(q=>{
+    const {a0,a1,seg,segIdx}=q;
+    const progFrac=eoc(Math.min(1,progress));
+    if(a0*progFrac>PI2) return;
+
+    const isHover=hoverIdx!==null&&hoverIdx!==undefined&&segIdx===hoverIdx;
+    const rEff=isHover?r*1.32:r;
+    const Reff=isHover?R+9:R;
+
+    const top=[],bot=[];
+    for(const ta of[a0,a1]){
+      const cosA=Math.cos(ta+rot),sinA=Math.sin(ta+rot);
+      const arr=ta===a0?top:bot;
+      for(let k=0;k<tubeSteps;k++){
+        const cosP=phiCos[k],sinP=phiSin[k];
+        const rad=Reff+rEff*cosP;
+        const x3=rad*cosA;
+        const y3raw=rad*sinA;
+        const z3=rEff*sinP;
+        const y3=y3raw*cosTilt+z3*sinTilt;
+        arr.push({x:cx+x3,y:cy+y3});
+      }
+    }
+
+    const ca=((a0+a1)/2+rot);
+    const col=seg.color;
+    const [r1,g1,b1]=rgbCache[col];
+    const ambient=isHover?0.4:0.28;
+
+    for(let k=0;k<tubeSteps;k++){
+      const k2=(k+1)%tubeSteps;
+      const phiMid=PI2*(k+.5)/tubeSteps;
+      const localNx=Math.cos(phiMid)*Math.cos(ca);
+      const localNy=Math.cos(phiMid)*Math.sin(ca)*cosTilt+Math.sin(phiMid)*sinTilt;
+      const ld=Math.max(0,localNx*lightDir.x+localNy*lightDir.y);
+      let ll=ambient+0.72*ld;
+      let ls=Math.pow(ld,6)*0.6;
+      if(isHover){ll*=1.2;ls*=1.35}
+      const lr=Math.min(255,Math.round(r1*ll+ls*255));
+      const lg2=Math.min(255,Math.round(g1*ll+ls*255));
+      const lb=Math.min(255,Math.round(b1*ll+ls*255));
+      ctx.beginPath();
+      ctx.moveTo(top[k].x,top[k].y);
+      ctx.lineTo(top[k2].x,top[k2].y);
+      ctx.lineTo(bot[k2].x,bot[k2].y);
+      ctx.lineTo(bot[k].x,bot[k].y);
+      ctx.closePath();
+      ctx.fillStyle=`rgb(${lr},${lg2},${lb})`;
+      ctx.fill();
+    }
+  });
+}
+
+function renderDonut(prog){
+  const w=setupCanvas(dC,dX,460);
+  const col=C();
+  const cx=w/2, cy=245, R=130, r=44, tilt=0.52;
+
+  /* perspective floor grid — visible in BOTH modes now */
+  dX.save();
+  dX.globalAlpha=isDay?0.10:0.15;
+  dX.strokeStyle=isDay?'#5a90c8':'#1a6080';
+  dX.lineWidth=.8;
+  const gY=cy+R*.9+r+25;const vx=cx,vy=gY-90;
+  for(let i=0;i<18;i++){const x=cx-280+560*i/17;dX.beginPath();dX.moveTo(x,gY);dX.lineTo(vx,vy);dX.stroke()}
+  for(let j=0;j<10;j++){const frac=j/9,yy=vy+(gY-vy)*frac;const sp=frac*.95;dX.beginPath();dX.moveTo(cx-280*sp,yy);dX.lineTo(cx+280*sp,yy);dX.stroke()}
+  dX.restore();
+
+  /* Build segments (12 months, paid/unpaid arcs) */
+  const PI2=Math.PI*2;
+  const totalDays=tP+tU;
+  const segs=[];
+  let acc=0;
+  MO.forEach((m,i)=>{
+    const pDays=PAID[i],uDays=UNPD[i];
+    const pFrac=pDays/totalDays, uFrac=uDays/totalDays;
+    segs.push({aStart:acc,aEnd:acc+PI2*pFrac,color:col.paid,month:m,type:'P',days:pDays,idx:i});
+    acc+=PI2*pFrac;
+    segs.push({aStart:acc,aEnd:acc+PI2*uFrac,color:col.unpaid,month:m,type:'U',days:uDays,idx:i});
+    acc+=PI2*uFrac;
+  });
+
+  drawTorus(dX,cx,cy,R,r,tilt,dRot,segs,prog,hovDonutIdx);
+  /* keep a copy for hit-testing on mousemove */
+  lastDonutSegs=segs;lastDonutCx=cx;lastDonutCy=cy;lastDonutR=R;lastDonutr=r;lastDonutTilt=tilt;
+
+  /* divider lines between months */
+  if(prog>0.85){
+    let ac2=0;
+    dX.save();dX.globalAlpha=isDay?0.35:0.5;
+    MO.forEach((_,i)=>{
+      const a=ac2+dRot;
+      const cosA=Math.cos(a),sinA=Math.sin(a);
+      const cos_t=Math.cos(tilt);
+      const ox=cx+(R+r*.15)*cosA;
+      const oy=cy+(R+r*.15)*sinA*cos_t;
+      const ix=cx+(R-r*.15)*cosA;
+      const iy=cy+(R-r*.15)*sinA*cos_t;
+      dX.beginPath();dX.moveTo(ix,iy);dX.lineTo(ox,oy);
+      dX.strokeStyle=isDay?'rgba(20,30,60,0.35)':'rgba(0,0,0,0.4)';dX.lineWidth=1.2;dX.stroke();
+      const mFrac=(PAID[i]+UNPD[i])/totalDays;
+      ac2+=PI2*mFrac;
+    });
+    dX.restore();
+  }
+
+  /* Glowing orb in center hole — adapts to mode */
+  if(prog>0.5){
+    const orbR=r*0.72;
+    const og=dX.createRadialGradient(cx,cy,0,cx,cy,orbR);
+    if(isDay){
+      og.addColorStop(0,'rgba(255,255,255,1)');
+      og.addColorStop(0.45,'rgba(210,228,255,0.95)');
+      og.addColorStop(0.85,'rgba(170,200,250,0.55)');
+      og.addColorStop(1,'rgba(150,180,240,0)');
+    } else {
+      og.addColorStop(0,'rgba(120,160,255,1)');
+      og.addColorStop(0.4,'rgba(80,100,220,0.9)');
+      og.addColorStop(0.85,'rgba(40,60,180,0.5)');
+      og.addColorStop(1,'rgba(20,30,120,0)');
+    }
+    dX.beginPath();dX.arc(cx,cy,orbR,0,Math.PI*2);dX.fillStyle=og;dX.fill();
+    const sh=dX.createRadialGradient(cx-orbR*.3,cy-orbR*.35,0,cx,cy,orbR);
+    sh.addColorStop(0,isDay?'rgba(255,255,255,0.9)':'rgba(200,220,255,0.85)');
+    sh.addColorStop(0.4,isDay?'rgba(255,255,255,0.25)':'rgba(150,180,255,0.2)');
+    sh.addColorStop(1,'rgba(0,0,0,0)');
+    dX.beginPath();dX.arc(cx,cy,orbR,0,Math.PI*2);dX.fillStyle=sh;dX.fill();
+    if(isDay){
+      dX.beginPath();dX.arc(cx,cy,orbR,0,Math.PI*2);
+      dX.strokeStyle='rgba(60,110,200,0.35)';dX.lineWidth=1.4;dX.stroke();
+    }
+  }
+
+  /* Leader lines + labels */
+  if(prog>0.9){
+    dX.save();
+    const fade=Math.min(1,(prog-0.9)/0.1);
+    dX.globalAlpha=fade;
+    let ac3=0;
+    const PI2b=Math.PI*2;
+    const cos_t=Math.cos(tilt);
+    MO.forEach((m,i)=>{
+      const mFrac=(PAID[i]+UNPD[i])/totalDays;
+      const midA=ac3+PI2b*mFrac/2+dRot;
+      ac3+=PI2b*mFrac;
+      const px=cx+(R+r*1.1)*Math.cos(midA);
+      const py=cy+(R+r*1.1)*Math.sin(midA)*cos_t;
+      const labelDist=R+r*2.3+20;
+      const lx=cx+labelDist*Math.cos(midA);
+      const ly=cy+labelDist*Math.sin(midA)*cos_t;
+      dX.beginPath();dX.arc(px,py,2.8,0,Math.PI*2);
+      dX.fillStyle=isDay?'rgba(40,60,110,0.9)':'rgba(200,230,255,0.9)';dX.fill();
+      dX.beginPath();dX.moveTo(px,py);dX.lineTo(lx,ly);
+      dX.strokeStyle=isDay?'rgba(80,120,200,0.5)':'rgba(130,170,230,0.5)';dX.lineWidth=1;dX.stroke();
+      const isRight=Math.cos(midA)>0;
+      dX.textAlign=isRight?'left':'right';
+      dX.font=`600 10.5px 'Syne',sans-serif`;
+      dX.fillStyle=isDay?'rgba(10,26,64,0.9)':'rgba(160,210,255,0.95)';
+      const lbl=`${m} (${PAID[i]}P / ${UNPD[i]}U)`;
+      dX.fillText(lbl,lx+(isRight?5:-5),ly+4);
+    });
+    dX.restore();
+  }
+
+  /* Center text — recentred to sit correctly inside the torus hole */
+  if(prog>0.85){
+    dX.textAlign='center';
+    dX.textBaseline='alphabetic';
+    dX.font=`800 22px 'Syne'`;
+    dX.fillStyle=isDay?'rgba(10,26,64,0.92)':'rgba(255,255,255,0.96)';
+    dX.fillText(tA,cx,cy-1);
+    dX.font=`600 9px 'DM Mono'`;
+    dX.fillStyle=isDay?'rgba(30,60,110,0.75)':'rgba(210,230,255,0.8)';
+    dX.fillText('TOTAL DAYS',cx,cy+14);
+  }
+}
+
+function tickDonut(){
+  dAnim=Math.min(dAnim+0.014,1);
+  if(hovDonutIdx===null) dRot+=0.003; /* pause rotation while a slice is hovered */
+  renderDonut(eoc(dAnim));
+  donutRAF=requestAnimationFrame(tickDonut);
+}
+function startDonut(){if(donutRAF) return;tickDonut()}
+function stopDonut(){if(donutRAF){cancelAnimationFrame(donutRAF);donutRAF=null}}
+
+/* smooth-shape toggle button handler */
+function toggleDonutSmooth(){
+  donutSmooth=!donutSmooth;
+  const btn=document.getElementById('donutSmoothBtn');
+  btn.textContent=donutSmooth?'✧ Smooth Shape: On':'✧ Smooth Shape: Off';
+  btn.classList.toggle('active',donutSmooth);
+  renderDonut(dAnim>0.99?1:eoc(dAnim));
+}
+
+/* hover hit-test: find which torus segment the mouse is over */
+function donutHitTest(mx,my){
+  if(!lastDonutSegs.length) return null;
+  const cosTilt=Math.cos(lastDonutTilt);
+  const dx=mx-lastDonutCx, dy=(my-lastDonutCy)/cosTilt;
+  const radial=Math.hypot(dx,dy);
+  if(radial<lastDonutR-lastDonutr*1.6||radial>lastDonutR+lastDonutr*1.6) return null;
+  const PI2=Math.PI*2;
+  let ang=Math.atan2(dy,dx)-dRot;
+  ang=((ang%PI2)+PI2)%PI2;
+  for(let i=0;i<lastDonutSegs.length;i++){
+    const s=lastDonutSegs[i];
+    if(ang>=s.aStart&&ang<s.aEnd) return i;
+  }
+  return null;
+}
+dC.addEventListener('mousemove',e=>{
+  const rect=dC.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const idx=donutHitTest(mx,my);
+  if(idx!==hovDonutIdx) hovDonutIdx=idx;
+  if(idx!==null){
+    const s=lastDonutSegs[idx];
+    showTip(e,tipHTML(s.idx));
+  } else hideTip();
+});
+dC.addEventListener('mouseleave',()=>{hovDonutIdx=null;hideTip()});
+
+/* ══════════════════════════════════════════
+   PIE — 3D TILTED, ROUNDED EDGES (optimized)
+══════════════════════════════════════════ */
+const pC=document.getElementById('pieCanvas');
+const pX=pC.getContext('2d');
+const P_SIDE_STEPS=22;
+
+function draw3DPieSeg(ctx,cx,cy,R,sA,eA,depth,col,tilt,rot,roundR,label,isHover){
+  const sa=sA+rot,ea=eA+rot;
+  const mid=(sa+ea)/2;
+  const [r1,g1,b1]=hexRGB(col);
+  const cosT=Math.cos(tilt);
+  let extDepth=depth*(0.5+0.5*Math.sin(tilt));
+  /* hovered slice: "explode" outward slightly and pop up for a zoom/highlight feel */
+  const explode=isHover?14:0;
+  const ecx=cx+Math.cos(mid)*explode, ecy=cy+Math.sin(mid)*cosT*explode;
+  if(isHover){ R=R*1.035; extDepth*=1.15; }
+
+  const sideSteps=P_SIDE_STEPS;
+  for(let k=0;k<sideSteps;k++){
+    const t0=k/sideSteps,t1=(k+1)/sideSteps;
+    const a0=sa+(ea-sa)*t0;
+    const a1=sa+(ea-sa)*t1;
+    const aMid=(a0+a1)/2;
+    const vis=Math.sin(aMid);
+    if(vis<-0.05) continue;
+    let shade=0.25+0.45*Math.max(0,Math.cos(aMid))+0.3*Math.max(0,vis);
+    if(isHover) shade*=1.18;
+    const x0=ecx+R*Math.cos(a0),y0=ecy+R*Math.sin(a0)*cosT;
+    const x1=ecx+R*Math.cos(a1),y1=ecy+R*Math.sin(a1)*cosT;
+    ctx.beginPath();
+    ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);
+    ctx.lineTo(x1,y1+extDepth);ctx.lineTo(x0,y0+extDepth);
+    ctx.closePath();
+    const spec=Math.pow(Math.max(0,Math.cos(aMid)),4)*0.5;
+    ctx.fillStyle=`rgb(${Math.round(r1*shade+spec*255)},${Math.round(g1*shade+spec*200)},${Math.round(b1*shade+spec*100)})`;
+    ctx.fill();
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(ecx,ecy);
+  const topSteps=sideSteps*2;
+  for(let k=0;k<=topSteps;k++){
+    const t=k/topSteps;
+    const a=sa+(ea-sa)*t;
+    const edgeF=Math.sin(Math.PI*t);
+    const rr=R-roundR*(1-edgeF)*0.12;
+    ctx.lineTo(ecx+rr*Math.cos(a),ecy+rr*Math.sin(a)*cosT);
+  }
+  ctx.closePath();
+  const grd=ctx.createRadialGradient(ecx,ecy,0,ecx,ecy,R);
+  grd.addColorStop(0,`rgba(${Math.min(255,Math.round(r1*1.3))},${Math.min(255,Math.round(g1*1.3))},${Math.min(255,Math.round(b1*1.3))},1)`);
+  grd.addColorStop(0.6,col);
+  grd.addColorStop(1,`rgb(${Math.round(r1*.6)},${Math.round(g1*.6)},${Math.round(b1*.6)})`);
+  ctx.fillStyle=grd;ctx.fill();
+
+  ctx.beginPath();
+  for(let k=0;k<=topSteps;k++){
+    const t=k/topSteps;
+    const a=sa+(ea-sa)*t;
+    const edgeF=Math.sin(Math.PI*t);
+    const rro=R-roundR*(1-edgeF)*0.12+2.5*edgeF;
+    if(k===0) ctx.moveTo(ecx+rro*Math.cos(a),ecy+rro*Math.sin(a)*cosT);
+    else ctx.lineTo(ecx+rro*Math.cos(a),ecy+rro*Math.sin(a)*cosT);
+  }
+  ctx.strokeStyle=`rgba(${Math.min(255,r1+90)},${Math.min(255,g1+90)},${Math.min(255,b1+90)},${isHover?0.95:0.6})`;
+  ctx.lineWidth=isHover?3:2;
+  if(isHover){ctx.shadowColor=col;ctx.shadowBlur=18;}
+  ctx.stroke();ctx.shadowBlur=0;
+  ctx.restore();
+
+  if(label&&(eA-sA)>0.25){
+    const lx=ecx+(R*.62)*Math.cos(mid),ly=ecy+(R*.62)*Math.sin(mid)*cosT;
+    ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.92)';
+    ctx.font=`700 11px 'Syne'`;ctx.fillText(label,lx,ly+4);
+  }
+}
+
+function renderPie(prog){
+  const w=setupCanvas(pC,pX,460);
+  const col=C();
+  const cx=w/2,cy=210,R=155,depth=48,tilt=0.58,roundR=R*.18;
+  const PI2=Math.PI*2;
+  const totalDays=tP+tU;
+
+  const segs2=[];
+  let acc=0,arrIdx=0;
+  MO.forEach((m,i)=>{
+    const pFrac=PAID[i]/totalDays;
+    const uFrac=UNPD[i]/totalDays;
+    segs2.push({sA:acc,eA:acc+PI2*pFrac*eoc(prog),col:col.paid,month:m,type:'P',days:PAID[i],idx:i,arrIdx:arrIdx++});
+    acc+=PI2*pFrac*eoc(prog);
+    segs2.push({sA:acc,eA:acc+PI2*uFrac*eoc(prog),col:col.unpaid,month:m,type:'U',days:UNPD[i],idx:i,arrIdx:arrIdx++});
+    acc+=PI2*uFrac*eoc(prog);
+  });
+  /* keep full-progress (unanimated) angle boundaries around for hover hit-testing */
+  lastPieSegs=[];acc=0;
+  MO.forEach((m,i)=>{
+    const pFrac=PAID[i]/totalDays, uFrac=UNPD[i]/totalDays;
+    lastPieSegs.push({sA:acc,eA:acc+PI2*pFrac,idx:i,type:'P'});acc+=PI2*pFrac;
+    lastPieSegs.push({sA:acc,eA:acc+PI2*uFrac,idx:i,type:'U'});acc+=PI2*uFrac;
+  });
+  lastPieCx=cx;lastPieCy=cy;lastPieR=R;lastPieTilt=tilt;
+
+  segs2.sort((a,b)=>Math.sin((a.sA+a.eA)/2+pRot)-Math.sin((b.sA+b.eA)/2+pRot));
+  segs2.forEach(s=>{
+    if(s.eA>s.sA+0.01) draw3DPieSeg(pX,cx,cy,R,s.sA,s.eA,depth,s.col,tilt,pRot,roundR,
+      (s.eA-s.sA)>0.2?s.month:'', s.arrIdx===hovPieIdx);
+  });
+
+  if(prog>0.8){
+    const by=cy+R*.7+depth+36;
+    pX.textAlign='center';
+    const items=[['Paid Leave',col.paid],['Unpaid Leave',col.unpaid]];
+    items.forEach(([lbl,cl],ii)=>{
+      const lx=w/2+(ii-.5)*180;
+      pX.fillStyle=cl;pX.beginPath();pX.arc(lx-50,by,6,0,Math.PI*2);pX.fill();
+      pX.fillStyle=col.text;pX.font=`600 12px 'Syne'`;pX.textAlign='left';
+      pX.fillText(lbl,lx-40,by+5);
+    });
+    pX.textAlign='center';pX.font=`700 13px 'Syne'`;
+    pX.fillStyle=col.paid;
+    pX.fillText(`Paid: ${tP} days (${Math.round(tP/tA*100)}%)`,w/2-90,by+30);
+    pX.fillStyle=col.unpaid;
+    pX.fillText(`Unpaid: ${tU} days (${Math.round(tU/tA*100)}%)`,w/2+90,by+30);
+  }
+}
+
+function tickPie(){
+  pAnim=Math.min(pAnim+0.016,1);
+  if(hovPieIdx===null) pRot+=0.0025; /* pause rotation while a slice is hovered */
+  renderPie(eoc(pAnim));
+  pieRAF=requestAnimationFrame(tickPie);
+}
+function startPie(){if(pieRAF) return;tickPie()}
+function stopPie(){if(pieRAF){cancelAnimationFrame(pieRAF);pieRAF=null}}
+
+/* hover hit-test: find which pie slice the mouse is over */
+function pieHitTest(mx,my){
+  if(!lastPieSegs.length) return null;
+  const cosT=Math.cos(lastPieTilt);
+  const dx=mx-lastPieCx, dy=(my-lastPieCy)/cosT;
+  const radial=Math.hypot(dx,dy);
+  if(radial>lastPieR+12) return null;
+  const PI2=Math.PI*2;
+  let ang=Math.atan2(dy,dx)-pRot;
+  ang=((ang%PI2)+PI2)%PI2;
+  for(let i=0;i<lastPieSegs.length;i++){
+    const s=lastPieSegs[i];
+    if(ang>=s.sA&&ang<s.eA) return i;
+  }
+  return null;
+}
+pC.addEventListener('mousemove',e=>{
+  const rect=pC.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const idx=pieHitTest(mx,my);
+  if(idx!==hovPieIdx) hovPieIdx=idx;
+  if(idx!==null){
+    const s=lastPieSegs[idx];
+    showTip(e,tipHTML(s.idx));
+  } else hideTip();
+});
+pC.addEventListener('mouseleave',()=>{hovPieIdx=null;hideTip()});
+
+/* ══════════════════════════════════════════
+   COMBO BAR CHART
+══════════════════════════════════════════ */
+const cC=document.getElementById('comboCanvas');
+const cX=cC.getContext('2d');
+
+function renderCombo(prog){
+  const w=setupCanvas(cC,cX,400);
+  const col=C();
+  const pad={l:46,r:16,t:16,b:44};
+  const cw=w-pad.l-pad.r,ch=400-pad.t-pad.b;
+  const data=selMonth!==null
+    ?[{m:MO[selMonth],p:PAID[selMonth],u:UNPD[selMonth]}]
+    :MO.map((m,i)=>({m,p:PAID[i],u:UNPD[i]}));
+  const maxV=Math.max(...data.map(d=>d.p+d.u))*1.2;
+  const n=data.length;
+  const groupW=cw/n;
+  const barW=Math.min(groupW*.36,20);
+  const gap=barW*.28;
+  const depth3d=8;
+
+  for(let i=0;i<=5;i++){
+    const y=pad.t+ch*(1-i/5);
+    cX.beginPath();cX.moveTo(pad.l,y);cX.lineTo(pad.l+cw,y);
+    cX.strokeStyle=col.grid;cX.lineWidth=.8;cX.stroke();
+    cX.fillStyle=col.text2;cX.font=`500 9.5px 'DM Mono'`;cX.textAlign='right';
+    cX.fillText(Math.round(maxV*i/5),pad.l-7,y+4);
+  }
+  cX.beginPath();cX.moveTo(pad.l,pad.t);cX.lineTo(pad.l,pad.t+ch);
+  cX.strokeStyle=col.grid;cX.lineWidth=1;cX.stroke();
+
+  data.forEach((d,i)=>{
+    const gx=pad.l+i*groupW;
+    const cx2=gx+groupW/2;
+    const x1=cx2-gap/2-barW, x2=cx2+gap/2;
+    const pH=ch*(d.p/maxV)*prog, uH=ch*(d.u/maxV)*prog;
+    const isH=hovBar&&hovBar.m===d.m;
+    const alpha=isH?1:(hovBar?0.38:1);
+
+    [[x1,pH,col.paid,col.paid,isDay?'rgba(80,200,160,0.85)':'rgba(60,230,170,0.85)'],[x2,uH,col.unpaid,col.unpaid,isDay?'rgba(100,150,255,0.85)':'rgba(120,160,255,0.85)']].forEach(([bx,bh,fc,dc,tc],bi)=>{
+      if(bh<1) return;
+      const y=pad.t+ch-bh;
+      cX.globalAlpha=alpha;
+      /* premium "building" feel: bright glassy top fading to a duller, denser base */
+      const grd=cX.createLinearGradient(bx,y,bx,y+bh);
+      grd.addColorStop(0,fc+'ff');
+      grd.addColorStop(0.55,fc+'d8');
+      grd.addColorStop(0.85,dc+'9a');
+      grd.addColorStop(1,dc+'70');
+      cX.beginPath();
+      if(cX.roundRect) cX.roundRect(bx,y,barW,bh,[4,4,0,0]);
+      else{cX.moveTo(bx+4,y);cX.lineTo(bx+barW-4,y);cX.quadraticCurveTo(bx+barW,y,bx+barW,y+4);cX.lineTo(bx+barW,y+bh);cX.lineTo(bx,y+bh);cX.lineTo(bx,y+4);cX.quadraticCurveTo(bx,y,bx+4,y);}
+      cX.fillStyle=grd;cX.fill();
+      cX.beginPath();
+      cX.moveTo(bx+barW,y+3);cX.lineTo(bx+barW+depth3d,y+3-depth3d*.45);
+      cX.lineTo(bx+barW+depth3d,y+bh-depth3d*.45);cX.lineTo(bx+barW,y+bh);cX.closePath();
+      const grdSide=cX.createLinearGradient(0,y,0,y+bh);
+      grdSide.addColorStop(0,dc+'d8');grdSide.addColorStop(1,dc+'6a');
+      cX.fillStyle=grdSide;cX.fill();
+      cX.beginPath();
+      cX.moveTo(bx,y+3);cX.lineTo(bx+barW,y+3);
+      cX.lineTo(bx+barW+depth3d,y+3-depth3d*.45);cX.lineTo(bx+depth3d,y+3-depth3d*.45);cX.closePath();
+      cX.fillStyle=tc;cX.fill();
+      cX.globalAlpha=1;
+      if(prog>0.92&&bh>20){
+        cX.fillStyle='rgba(255,255,255,0.88)';
+        cX.font=`bold 9px 'DM Mono'`;cX.textAlign='center';
+        cX.fillText(bi===0?d.p:d.u,bx+barW/2,y+bh/2+4);
+      }
+    });
+    cX.fillStyle=col.text2;cX.font=`600 10px 'Syne'`;cX.textAlign='center';
+    cX.fillText(d.m,cx2,pad.t+ch+18);
+    if(isH&&prog>0.9){
+      const topY=pad.t+ch-Math.max(pH,uH)-depth3d*.45-10;
+      cX.fillStyle=col.text;cX.font=`600 9.5px 'DM Mono'`;cX.textAlign='center';
+      cX.fillText(`P:${d.p} U:${d.u}`,cx2,topY);
+    }
+  });
+}
+
+function tickCombo(){
+  cAnim=Math.min(cAnim+0.022,1);
+  renderCombo(eoc(cAnim));
+  if(cAnim<1) comboRAF=requestAnimationFrame(tickCombo);
+  else comboRAF=null;
+}
+function startCombo(){if(comboRAF) return;cAnim=0;tickCombo()}
+function resetCombo(){cAnim=0;if(comboRAF){cancelAnimationFrame(comboRAF);comboRAF=null}tickCombo()}
+
+cC.addEventListener('mousemove',e=>{
+  const rect=cC.getBoundingClientRect();
+  const mx=(e.clientX-rect.left);
+  const w=cC.offsetWidth;
+  const data=selMonth!==null?[{m:MO[selMonth],p:PAID[selMonth],u:UNPD[selMonth]}]:MO.map((m,i)=>({m,p:PAID[i],u:UNPD[i]}));
+  const pad={l:46,r:16,t:16,b:44};
+  const cw=w-pad.l-pad.r;
+  const n=data.length;const groupW=cw/n;
+  let found=null;
+  data.forEach((d,i)=>{const cx2=pad.l+(i+.5)*groupW;if(mx>=cx2-groupW*.5&&mx<=cx2+groupW*.5) found=d});
+  if(found&&found!==hovBar){hovBar=found;renderCombo(1);showTip(e,`<strong>${found.m}</strong><span class="tp"> Paid: ${found.p}d</span> · <span class="tu">Unpaid: ${found.u}d</span>`)}
+  else if(!found&&hovBar){hovBar=null;renderCombo(1);hideTip()}
+  else if(found) showTip(e,`<strong>${found.m}</strong><span class="tp"> Paid: ${found.p}d</span> · <span class="tu">Unpaid: ${found.u}d</span>`);
+});
+cC.addEventListener('mouseleave',()=>{hovBar=null;renderCombo(1);hideTip()});
+
+/* ══════════════════════════════════════════
+   AREA CHART — stacked glow fill
+══════════════════════════════════════════ */
+const aC=document.getElementById('areaCanvas');
+const aX=aC.getContext('2d');
+let aAnim=0,aRAF=null,hovArea=null;
+
+function areaGeom(w,h){
+  const pad={l:46,r:16,t:20,b:38};
+  const cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;
+  const maxV=maxTotal*1.25;
+  const n=MO.length;
+  const xs=MO.map((_,i)=>pad.l+(i/(n-1))*cw);
+  const totalY=MO.map((_,i)=>pad.t+ch*(1-TOT[i]/maxV));
+  const paidY=MO.map((_,i)=>pad.t+ch*(1-PAID[i]/maxV));
+  return{pad,cw,ch,maxV,xs,totalY,paidY,baseY:pad.t+ch};
+}
+
+function renderArea(prog){
+  const w=setupCanvas(aC,aX,420);
+  const col=C();
+  const g=areaGeom(w,420);
+  const {pad,cw,ch,maxV,xs,totalY,paidY,baseY}=g;
+  const n=MO.length;
+  const revealX=pad.l+cw*eoc(prog);
+
+  for(let i=0;i<=5;i++){
+    const y=pad.t+ch*(1-i/5);
+    aX.beginPath();aX.moveTo(pad.l,y);aX.lineTo(pad.l+cw,y);
+    aX.strokeStyle=col.grid;aX.lineWidth=.8;aX.stroke();
+    aX.fillStyle=col.text2;aX.font=`500 9.5px 'DM Mono'`;aX.textAlign='right';
+    aX.fillText(Math.round(maxV*i/5),pad.l-7,y+4);
+  }
+
+  aX.save();
+  aX.beginPath();aX.rect(pad.l,pad.t,Math.max(0,revealX-pad.l),ch);aX.clip();
+
+  /* total (unpaid-tinted background) area — smoothed curve */
+  const totalPts=xs.map((x,i)=>({x,y:totalY[i]}));
+  aX.beginPath();aX.moveTo(totalPts[0].x,baseY);aX.lineTo(totalPts[0].x,totalPts[0].y);
+  smoothPath(aX,totalPts);
+  aX.lineTo(xs[n-1],baseY);aX.closePath();
+  let grdU=aX.createLinearGradient(0,pad.t,0,baseY);
+  grdU.addColorStop(0,col.unpaid+'aa');grdU.addColorStop(1,col.unpaid+'08');
+  aX.fillStyle=grdU;aX.fill();
+
+  /* paid area on top — smoothed curve */
+  const paidPts=xs.map((x,i)=>({x,y:paidY[i]}));
+  aX.beginPath();aX.moveTo(paidPts[0].x,baseY);aX.lineTo(paidPts[0].x,paidPts[0].y);
+  smoothPath(aX,paidPts);
+  aX.lineTo(xs[n-1],baseY);aX.closePath();
+  let grdP=aX.createLinearGradient(0,pad.t,0,baseY);
+  grdP.addColorStop(0,col.paid+'cc');grdP.addColorStop(1,col.paid+'10');
+  aX.fillStyle=grdP;aX.fill();
+
+  /* stroke lines with glow — smoothed curve */
+  [[totalPts,col.unpaid],[paidPts,col.paid]].forEach(([pts,c])=>{
+    aX.beginPath();smoothPath(aX,pts);
+    aX.strokeStyle=c;aX.lineWidth=2.2;
+    aX.shadowColor=c;aX.shadowBlur=10;
+    aX.stroke();aX.shadowBlur=0;
+  });
+  aX.restore();
+
+  /* points */
+  MO.forEach((m,i)=>{
+    if(xs[i]>revealX+2) return;
+    const isH=hovArea===i;
+    [[paidY[i],col.paid],[totalY[i],col.unpaid]].forEach(([y,c])=>{
+      aX.beginPath();aX.arc(xs[i],y,isH?5:3.2,0,Math.PI*2);
+      aX.fillStyle=c;aX.shadowColor=c;aX.shadowBlur=isH?12:4;aX.fill();aX.shadowBlur=0;
+    });
+    aX.fillStyle=col.text2;aX.font=`600 9.5px 'Syne'`;aX.textAlign='center';
+    aX.fillText(m,xs[i],baseY+16);
+  });
+
+  if(hovArea!==null){
+    aX.save();aX.globalAlpha=.5;
+    aX.beginPath();aX.moveTo(xs[hovArea],pad.t);aX.lineTo(xs[hovArea],baseY);
+    aX.strokeStyle=col.text2;aX.lineWidth=1;aX.setLineDash([4,4]);aX.stroke();
+    aX.restore();
+  }
+}
+
+function tickArea(){aAnim=Math.min(aAnim+0.025,1);renderArea(aAnim);if(aAnim<1) aRAF=requestAnimationFrame(tickArea);else aRAF=null}
+function startArea(){aAnim=0;if(aRAF)cancelAnimationFrame(aRAF);tickArea()}
+function stopArea(){if(aRAF){cancelAnimationFrame(aRAF);aRAF=null}}
+
+aC.addEventListener('mousemove',e=>{
+  const rect=aC.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  const w=aC.offsetWidth;
+  const g=areaGeom(w,420);
+  let idx=null,best=1e9;
+  g.xs.forEach((x,i)=>{const d=Math.abs(x-mx);if(d<best){best=d;idx=i}});
+  if(best>g.cw/MO.length) idx=null;
+  if(idx!==hovArea){hovArea=idx;renderArea(1)}
+  if(idx!==null){showTip(e,tipHTML(idx))} else hideTip();
+});
+aC.addEventListener('mouseleave',()=>{hovArea=null;renderArea(1);hideTip()});
+
+/* ══════════════════════════════════════════
+   LINE CHART — dual trend, glowing nodes
+══════════════════════════════════════════ */
+const lC=document.getElementById('lineCanvas');
+const lX=lC.getContext('2d');
+let lAnim=0,lRAF=null,hovLine=null;
+
+function lineGeom(w,h){
+  const pad={l:46,r:16,t:20,b:38};
+  const cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;
+  const maxV=Math.max(...PAID,...UNPD)*1.25;
+  const n=MO.length;
+  const xs=MO.map((_,i)=>pad.l+(i/(n-1))*cw);
+  const paidY=MO.map((_,i)=>pad.t+ch*(1-PAID[i]/maxV));
+  const unpaidY=MO.map((_,i)=>pad.t+ch*(1-UNPD[i]/maxV));
+  return{pad,cw,ch,maxV,xs,paidY,unpaidY};
+}
+
+function renderLine(prog){
+  const w=setupCanvas(lC,lX,420);
+  const col=C();
+  const g=lineGeom(w,420);
+  const {pad,cw,ch,maxV,xs,paidY,unpaidY}=g;
+  const n=MO.length;
+  const revealX=pad.l+cw*eoc(prog);
+
+  for(let i=0;i<=5;i++){
+    const y=pad.t+ch*(1-i/5);
+    lX.beginPath();lX.moveTo(pad.l,y);lX.lineTo(pad.l+cw,y);
+    lX.strokeStyle=col.grid;lX.lineWidth=.8;lX.stroke();
+    lX.fillStyle=col.text2;lX.font=`500 9.5px 'DM Mono'`;lX.textAlign='right';
+    lX.fillText(Math.round(maxV*i/5),pad.l-7,y+4);
+  }
+
+  lX.save();
+  lX.beginPath();lX.rect(pad.l,pad.t,Math.max(0,revealX-pad.l),ch);lX.clip();
+  [[paidY,col.paid],[unpaidY,col.unpaid]].forEach(([ys,c])=>{
+    lX.beginPath();ys.forEach((y,i)=>i===0?lX.moveTo(xs[i],y):lX.lineTo(xs[i],y));
+    lX.strokeStyle=c;lX.lineWidth=2.4;lX.lineJoin='round';
+    lX.shadowColor=c;lX.shadowBlur=12;
+    lX.stroke();lX.shadowBlur=0;
+  });
+  lX.restore();
+
+  MO.forEach((m,i)=>{
+    if(xs[i]>revealX+2) return;
+    const isH=hovLine===i;
+    [[paidY[i],col.paid],[unpaidY[i],col.unpaid]].forEach(([y,c])=>{
+      lX.beginPath();lX.arc(xs[i],y,isH?5.5:3.4,0,Math.PI*2);
+      lX.fillStyle=isDay?'#fff':'#0a1428';lX.fill();
+      lX.lineWidth=2;lX.strokeStyle=c;lX.shadowColor=c;lX.shadowBlur=isH?12:5;lX.stroke();lX.shadowBlur=0;
+    });
+    lX.fillStyle=col.text2;lX.font=`600 9.5px 'Syne'`;lX.textAlign='center';
+    lX.fillText(m,xs[i],pad.t+ch+16);
+  });
+
+  if(hovLine!==null){
+    lX.save();lX.globalAlpha=.5;
+    lX.beginPath();lX.moveTo(xs[hovLine],pad.t);lX.lineTo(xs[hovLine],pad.t+ch);
+    lX.strokeStyle=col.text2;lX.lineWidth=1;lX.setLineDash([4,4]);lX.stroke();
+    lX.restore();
+  }
+}
+
+function tickLine(){lAnim=Math.min(lAnim+0.025,1);renderLine(lAnim);if(lAnim<1) lRAF=requestAnimationFrame(tickLine);else lRAF=null}
+function startLine(){lAnim=0;if(lRAF)cancelAnimationFrame(lRAF);tickLine()}
+function stopLine(){if(lRAF){cancelAnimationFrame(lRAF);lRAF=null}}
+
+lC.addEventListener('mousemove',e=>{
+  const rect=lC.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  const w=lC.offsetWidth;
+  const g=lineGeom(w,420);
+  let idx=null,best=1e9;
+  g.xs.forEach((x,i)=>{const d=Math.abs(x-mx);if(d<best){best=d;idx=i}});
+  if(best>g.cw/MO.length) idx=null;
+  if(idx!==hovLine){hovLine=idx;renderLine(1)}
+  if(idx!==null) showTip(e,tipHTML(idx)); else hideTip();
+});
+lC.addEventListener('mouseleave',()=>{hovLine=null;renderLine(1);hideTip()});
+
+/* ══════════════════════════════════════════
+   RADAR CHART — 12-axis, stacked polygons
+══════════════════════════════════════════ */
+const rC=document.getElementById('radarCanvas');
+const rX=rC.getContext('2d');
+let rAnim=0,rRAF=null,hovRadar=null;
+
+function radarGeom(w,h){
+  const cx=w/2,cy=h/2+6,Rmax=Math.min(w,h)*0.34;
+  const n=MO.length;
+  const maxV=maxTotal*1.15;
+  const angle=i=>-Math.PI/2+i*(Math.PI*2/n);
+  return{cx,cy,Rmax,n,maxV,angle};
+}
+
+function renderRadar(prog){
+  const w=setupCanvas(rC,rX,460);
+  const col=C();
+  const g=radarGeom(w,460);
+  const {cx,cy,Rmax,n,maxV,angle}=g;
+  const p=eoc(prog);
+
+  /* grid rings */
+  rX.strokeStyle=col.grid;rX.lineWidth=.8;
+  for(let ring=1;ring<=4;ring++){
+    const rr=Rmax*ring/4;
+    rX.beginPath();
+    for(let i=0;i<=n;i++){
+      const a=angle(i%n);
+      const x=cx+rr*Math.cos(a),y=cy+rr*Math.sin(a);
+      i===0?rX.moveTo(x,y):rX.lineTo(x,y);
+    }
+    rX.stroke();
+  }
+  /* spokes + labels */
+  for(let i=0;i<n;i++){
+    const a=angle(i);
+    rX.beginPath();rX.moveTo(cx,cy);rX.lineTo(cx+Rmax*Math.cos(a),cy+Rmax*Math.sin(a));
+    rX.strokeStyle=col.grid;rX.lineWidth=.8;rX.stroke();
+    const lx=cx+(Rmax+18)*Math.cos(a),ly=cy+(Rmax+18)*Math.sin(a);
+    rX.fillStyle=hovRadar===i?col.text:col.text2;
+    rX.font=`${hovRadar===i?'700':'600'} 10px 'Syne'`;
+    rX.textAlign=Math.cos(a)>0.2?'left':Math.cos(a)<-0.2?'right':'center';
+    rX.fillText(MO[i],lx,ly+4);
+  }
+
+  /* polygons: unpaid (outer/total) then paid (inner) */
+  const totalPts=[],paidPts=[];
+  for(let i=0;i<n;i++){
+    const a=angle(i);
+    const rt=Rmax*(TOT[i]/maxV)*p, rp=Rmax*(PAID[i]/maxV)*p;
+    totalPts.push({x:cx+rt*Math.cos(a),y:cy+rt*Math.sin(a)});
+    paidPts.push({x:cx+rp*Math.cos(a),y:cy+rp*Math.sin(a)});
+  }
+  [[totalPts,col.unpaid],[paidPts,col.paid]].forEach(([pts,c])=>{
+    rX.beginPath();pts.forEach((pt,i)=>i===0?rX.moveTo(pt.x,pt.y):rX.lineTo(pt.x,pt.y));rX.closePath();
+    rX.fillStyle=c+'33';rX.fill();
+    rX.strokeStyle=c;rX.lineWidth=2;rX.shadowColor=c;rX.shadowBlur=8;rX.stroke();rX.shadowBlur=0;
+    pts.forEach((pt,i)=>{
+      const isH=hovRadar===i;
+      rX.beginPath();rX.arc(pt.x,pt.y,isH?5:3,0,Math.PI*2);
+      rX.fillStyle=c;rX.shadowColor=c;rX.shadowBlur=isH?12:4;rX.fill();rX.shadowBlur=0;
+    });
+  });
+}
+
+function tickRadar(){rAnim=Math.min(rAnim+0.02,1);renderRadar(rAnim);if(rAnim<1) rRAF=requestAnimationFrame(tickRadar);else rRAF=null}
+function startRadar(){rAnim=0;if(rRAF)cancelAnimationFrame(rRAF);tickRadar()}
+function stopRadar(){if(rRAF){cancelAnimationFrame(rRAF);rRAF=null}}
+
+rC.addEventListener('mousemove',e=>{
+  const rect=rC.getBoundingClientRect();
+  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  const w=rC.offsetWidth;
+  const g=radarGeom(w,460);
+  const dx=mx-g.cx,dy=my-g.cy;
+  let a=Math.atan2(dy,dx)+Math.PI/2;
+  if(a<0) a+=Math.PI*2;
+  const idx=Math.round(a/(Math.PI*2/g.n))%g.n;
+  if(idx!==hovRadar){hovRadar=idx;renderRadar(1)}
+  showTip(e,tipHTML(idx));
+});
+rC.addEventListener('mouseleave',()=>{hovRadar=null;renderRadar(1);hideTip()});
+
+/* ══════════════════════════════════════════
+   POLAR CHART — nightingale rose
+══════════════════════════════════════════ */
+const poC=document.getElementById('polarCanvas');
+const poX=poC.getContext('2d');
+let poAnim=0,poRAF=null,hovPolar=null;
+
+function polarGeom(w,h){
+  const cx=w/2,cy=h/2+6,Rmax=Math.min(w,h)*0.36;
+  const n=MO.length;
+  const seg=(Math.PI*2)/n;
+  return{cx,cy,Rmax,n,seg,maxV:maxTotal};
+}
+
+function renderPolar(prog){
+  const w=setupCanvas(poC,poX,460);
+  const col=C();
+  const g=polarGeom(w,460);
+  const {cx,cy,Rmax,n,seg,maxV}=g;
+  const p=eoc(prog);
+
+  for(let ring=1;ring<=4;ring++){
+    rXring(poX,cx,cy,Rmax*ring/4,col.grid);
+  }
+  function rXring(ctx,cx,cy,rr,c){ctx.beginPath();ctx.arc(cx,cy,rr,0,Math.PI*2);ctx.strokeStyle=c;ctx.lineWidth=.8;ctx.stroke();}
+
+  for(let i=0;i<n;i++){
+    const a0=-Math.PI/2+i*seg+0.015,a1=-Math.PI/2+(i+1)*seg-0.015;
+    const isH=hovPolar===i;
+    const extra=isH?8:0;
+    const rp=(Rmax*Math.sqrt(PAID[i]/maxV))*p+extra;
+    const rt=(Rmax*Math.sqrt(TOT[i]/maxV))*p+extra;
+
+    /* unpaid outer wedge */
+    poX.beginPath();poX.moveTo(cx,cy);
+    poX.arc(cx,cy,rt,a0,a1);poX.closePath();
+    poX.fillStyle=col.unpaid+(isH?'ee':'bb');
+    poX.shadowColor=col.unpaid;poX.shadowBlur=isH?14:4;
+    poX.fill();poX.shadowBlur=0;
+
+    /* paid inner wedge */
+    poX.beginPath();poX.moveTo(cx,cy);
+    poX.arc(cx,cy,rp,a0,a1);poX.closePath();
+    poX.fillStyle=col.paid+(isH?'ff':'dd');
+    poX.shadowColor=col.paid;poX.shadowBlur=isH?14:4;
+    poX.fill();poX.shadowBlur=0;
+
+    poX.beginPath();poX.moveTo(cx,cy);poX.arc(cx,cy,rt,a0,a1);poX.closePath();
+    poX.strokeStyle=isDay?'rgba(255,255,255,0.6)':'rgba(10,15,30,0.5)';poX.lineWidth=1;poX.stroke();
+
+    if(p>0.9){
+      const mid=(a0+a1)/2;
+      const lx=cx+(Rmax+16)*Math.cos(mid),ly=cy+(Rmax+16)*Math.sin(mid);
+      poX.fillStyle=isH?col.text:col.text2;
+      poX.font=`${isH?'700':'600'} 10px 'Syne'`;
+      poX.textAlign=Math.cos(mid)>0.2?'left':Math.cos(mid)<-0.2?'right':'center';
+      poX.fillText(MO[i],lx,ly+4);
+    }
+  }
+}
+
+function tickPolar(){poAnim=Math.min(poAnim+0.02,1);renderPolar(poAnim);if(poAnim<1) poRAF=requestAnimationFrame(tickPolar);else poRAF=null}
+function startPolar(){poAnim=0;if(poRAF)cancelAnimationFrame(poRAF);tickPolar()}
+function stopPolar(){if(poRAF){cancelAnimationFrame(poRAF);poRAF=null}}
+
+poC.addEventListener('mousemove',e=>{
+  const rect=poC.getBoundingClientRect();
+  const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+  const w=poC.offsetWidth;
+  const g=polarGeom(w,460);
+  const dx=mx-g.cx,dy=my-g.cy;
+  const dist=Math.hypot(dx,dy);
+  if(dist>g.Rmax+20){ if(hovPolar!==null){hovPolar=null;renderPolar(1);hideTip()} return; }
+  let a=Math.atan2(dy,dx)+Math.PI/2;
+  if(a<0) a+=Math.PI*2;
+  const idx=Math.floor(a/g.seg)%g.n;
+  if(idx!==hovPolar){hovPolar=idx;renderPolar(1)}
+  showTip(e,tipHTML(idx));
+});
+poC.addEventListener('mouseleave',()=>{hovPolar=null;renderPolar(1);hideTip()});
+
+/* ══════════════════════════════════════════
+   TOWER CHART — 3D cylindrical skyline
+══════════════════════════════════════════ */
+const twC=document.getElementById('towerCanvas');
+const twX=twC.getContext('2d');
+let twAnim=0,twRAF=null,hovTower=null;
+
+function towerGeom(w,h){
+  const pad={l:36,r:36,t:40,b:70};
+  const cw=w-pad.l-pad.r,ch=h-pad.t-pad.b;
+  const n=MO.length;
+  const slotW=cw/n;
+  const towerW=Math.min(slotW*0.5,34);
+  const maxV=maxTotal*1.2;
+  const baseY=pad.t+ch;
+  return{pad,cw,ch,n,slotW,towerW,maxV,baseY};
+}
+
+function renderTower(prog){
+  const w=setupCanvas(twC,twX,460);
+  const col=C();
+  const g=towerGeom(w,460);
+  const {pad,cw,ch,n,slotW,towerW,maxV,baseY}=g;
+  const p=eoc(prog);
+
+  /* floor perspective grid */
+  twX.save();twX.globalAlpha=isDay?0.12:0.18;twX.strokeStyle=isDay?'#5a90c8':'#1a6080';twX.lineWidth=.8;
+  for(let i=0;i<=n;i++){const x=pad.l+i*slotW;twX.beginPath();twX.moveTo(x,baseY);twX.lineTo(x,baseY+18);twX.stroke()}
+  twX.beginPath();twX.moveTo(pad.l,baseY);twX.lineTo(pad.l+cw,baseY);twX.stroke();
+  twX.restore();
+
+  for(let i=0;i<n;i++){
+    const cx2=pad.l+slotW*(i+0.5);
+    const isH=hovTower===i;
+    const h=ch*(TOT[i]/maxV)*p;
+    const y=baseY-h;
+    const rx=towerW/2, ry=towerW*0.22;
+    const lift=isH?6:0;
+    const topY=y-lift;
+
+    const pFrac=PAID[i]/TOT[i];
+    const splitY=topY+h*(1-pFrac);
+
+    /* side wall gradient (unpaid on top, paid on bottom) */
+    const grdWall=twX.createLinearGradient(0,topY,0,baseY);
+    grdWall.addColorStop(0,col.unpaid);
+    grdWall.addColorStop(Math.min(0.999,1-pFrac),col.unpaid);
+    grdWall.addColorStop(Math.min(1,1-pFrac+0.001),col.paid);
+    grdWall.addColorStop(1,col.paid);
+    twX.globalAlpha=isH?1:0.85;
+    twX.beginPath();
+    twX.moveTo(cx2-rx,topY);
+    twX.lineTo(cx2-rx,baseY);
+    twX.ellipse(cx2,baseY,rx,ry,0,Math.PI,0,true);
+    twX.lineTo(cx2+rx,topY);
+    twX.ellipse(cx2,topY,rx,ry,0,0,Math.PI,true);
+    twX.closePath();
+    twX.fillStyle=grdWall;twX.fill();
+
+    /* top cap */
+    twX.beginPath();twX.ellipse(cx2,topY,rx,ry,0,0,Math.PI*2);
+    twX.fillStyle=isDay?'#e8f2ff':'#dff5ff';
+    twX.globalAlpha=isH?1:0.95;
+    twX.shadowColor=col.unpaid;twX.shadowBlur=isH?16:6;
+    twX.fill();twX.shadowBlur=0;
+    twX.globalAlpha=1;
+
+    /* glow outline when hovered */
+    if(isH){
+      twX.beginPath();twX.ellipse(cx2,topY,rx,ry,0,0,Math.PI*2);
+      twX.strokeStyle=col.accent||col.unpaid;twX.lineWidth=1.6;twX.stroke();
+    }
+
+    /* label */
+    twX.fillStyle=isH?col.text:col.text2;
+    twX.font=`${isH?'700':'600'} 10px 'Syne'`;twX.textAlign='center';
+    twX.fillText(MO[i],cx2,baseY+22);
+    if(p>0.9){
+      twX.font=`600 9px 'DM Mono'`;
+      twX.fillStyle=isH?col.text:col.text2;
+      twX.fillText(TOT[i],cx2,topY-lift-8);
+    }
+  }
+}
+
+function tickTower(){twAnim=Math.min(twAnim+0.02,1);renderTower(twAnim);if(twAnim<1) twRAF=requestAnimationFrame(tickTower);else twRAF=null}
+function startTower(){twAnim=0;if(twRAF)cancelAnimationFrame(twRAF);tickTower()}
+function stopTower(){if(twRAF){cancelAnimationFrame(twRAF);twRAF=null}}
+
+twC.addEventListener('mousemove',e=>{
+  const rect=twC.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  const w=twC.offsetWidth;
+  const g=towerGeom(w,460);
+  let idx=Math.floor((mx-g.pad.l)/g.slotW);
+  if(idx<0||idx>=g.n) idx=null;
+  if(idx!==hovTower){hovTower=idx;renderTower(1)}
+  if(idx!==null) showTip(e,tipHTML(idx)); else hideTip();
+});
+twC.addEventListener('mouseleave',()=>{hovTower=null;renderTower(1);hideTip()});
+
+/* ── CHART SWITCHER ── */
+const CHARTS={
+  donut:{start:()=>{dAnim=0;startDonut()},stop:stopDonut},
+  pie:{start:()=>{pAnim=0;startPie()},stop:stopPie},
+  combo:{start:()=>resetCombo(),stop:()=>{if(comboRAF){cancelAnimationFrame(comboRAF);comboRAF=null}}},
+  area:{start:startArea,stop:stopArea},
+  line:{start:startLine,stop:stopLine},
+  radar:{start:startRadar,stop:stopRadar},
+  polar:{start:startPolar,stop:stopPolar},
+  tower:{start:startTower,stop:stopTower}
+};
+
+function switchChart(name,btn){
+  if(activeChart===name) return;
+  document.getElementById('panel-'+activeChart).classList.remove('active');
+  CHARTS[activeChart].stop();
+  activeChart=name;
+  document.getElementById('panel-'+name).classList.add('active');
+  document.querySelectorAll('.sw-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  CHARTS[name].start();
+}
+
+/* ── MONTH TABS (combo chart) ── */
+function buildTabs(){
+  const t=document.getElementById('mTabs');t.innerHTML='';
+  const ab=document.createElement('button');ab.className='mt-btn'+(selMonth===null?' active':'');
+  ab.textContent='All';ab.onclick=()=>{selMonth=null;updateTabs();resetCombo()};t.appendChild(ab);
+  MO.forEach((m,i)=>{
+    const b=document.createElement('button');b.className='mt-btn'+(selMonth===i?' active':'');
+    b.textContent=m;b.onclick=()=>{selMonth=i;updateTabs();resetCombo()};t.appendChild(b);
+  });
+}
+function updateTabs(){document.querySelectorAll('.mt-btn').forEach((b,i)=>{b.classList.toggle('active',i===0?selMonth===null:selMonth===i-1)})}
+
+/* ── MODE ── */
+function toggleMode(){
+  isDay=!isDay;
+  document.body.classList.toggle('day',isDay);
+  document.getElementById('modeIcon').textContent=isDay?'🌙':'☀️';
+  document.getElementById('modeText').textContent=isDay?'Night Mode':'Day Mode';
+  /* re-render whichever chart is currently active/visible at full progress */
+  const rerender={
+    donut:()=>renderDonut(dAnim>0.99?1:dAnim),
+    pie:()=>renderPie(pAnim>0.99?1:pAnim),
+    combo:()=>renderCombo(1),
+    area:()=>renderArea(1),
+    line:()=>renderLine(1),
+    radar:()=>renderRadar(1),
+    polar:()=>renderPolar(1),
+    tower:()=>renderTower(1)
+  };
+  rerender[activeChart]();
+}
+
+/* ── VISIBILITY ── */
+const obs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting) e.target.classList.add('vis')});
+},{threshold:.1});
+document.querySelectorAll('.chart-stage').forEach((el,i)=>{el.style.transitionDelay=(i*.1)+'s';obs.observe(el)});
+
+/* ── INIT ── */
+window.addEventListener('load',()=>{
+  buildTabs();
+  setTimeout(()=>startDonut(),300);
+});
+window.addEventListener('resize',()=>{
+  const rerender={
+    donut:()=>renderDonut(dAnim>0.99?1:dAnim),
+    pie:()=>renderPie(pAnim>0.99?1:pAnim),
+    combo:()=>renderCombo(cAnim>0.99?1:cAnim),
+    area:()=>renderArea(aAnim>0.99?1:aAnim),
+    line:()=>renderLine(lAnim>0.99?1:lAnim),
+    radar:()=>renderRadar(rAnim>0.99?1:rAnim),
+    polar:()=>renderPolar(poAnim>0.99?1:poAnim),
+    tower:()=>renderTower(twAnim>0.99?1:twAnim)
+  };
+  rerender[activeChart]();
+});
+</script>
+</body>
+</html>
